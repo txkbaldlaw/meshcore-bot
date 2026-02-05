@@ -148,6 +148,17 @@ And in your system config
 
 The bot uses `config.ini` for all settings. Key configuration sections:
 
+### Recommended Database Location
+For forward compatibility (local, Docker, and backups), we recommend storing databases under `data/`:
+```ini
+[Bot]
+db_path = ./data/databases/meshcore_bot.db
+
+[Web_Viewer]
+db_path = ./data/databases/meshcore_bot.db
+```
+This keeps the repo root clean and aligns local and containerized deployments.
+
 ### Connection
 ```ini
 [Connection]

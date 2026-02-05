@@ -24,6 +24,7 @@ sys.path.insert(0, project_root)
 
 from modules.db_manager import DBManager
 from modules.repeater_manager import RepeaterManager
+from modules.repeater_health_manager import RepeaterHealthManager
 from modules.utils import resolve_path, calculate_distance
 
 class BotDataViewer:
@@ -154,8 +155,27 @@ class BotDataViewer:
                 feed_manager_enabled = self.config.getboolean('Feed_Manager', 'feed_manager_enabled', fallback=False)
             except (configparser.NoSectionError, configparser.NoOptionError):
                 feed_manager_enabled = False
+
+            try:
+                repeater_health_enabled = self.config.getboolean(
+                    'Repeater_Health',
+                    'web_viewer_enabled',
+                    fallback=False
+                )
+            except (configparser.NoSectionError, configparser.NoOptionError):
+                repeater_health_enabled = False
+
+            try:
+                repeater_health_timezone = self.config.get('Bot', 'timezone', fallback='').strip()
+            except (configparser.NoSectionError, configparser.NoOptionError):
+                repeater_health_timezone = ''
             
-            return dict(greeter_enabled=greeter_enabled, feed_manager_enabled=feed_manager_enabled)
+            return dict(
+                greeter_enabled=greeter_enabled,
+                feed_manager_enabled=feed_manager_enabled,
+                repeater_health_enabled=repeater_health_enabled,
+                repeater_health_timezone=repeater_health_timezone
+            )
     
     def _init_databases(self):
         """Initialize database connections"""
@@ -178,6 +198,9 @@ class BotDataViewer:
             
             # Initialize repeater manager for geocoding functionality
             self.repeater_manager = RepeaterManager(minimal_bot)
+
+            # Initialize repeater health manager for monitoring tables
+            self.repeater_health_manager = RepeaterHealthManager(minimal_bot)
             
             # Initialize mesh graph for path resolution (uses same logic as path command)
             from modules.mesh_graph import MeshGraph
@@ -1047,6 +1070,11 @@ class BotDataViewer:
         def mesh():
             """Mesh graph visualization page"""
             return render_template('mesh.html')
+
+        @self.app.route('/repeater-health')
+        def repeater_health():
+            """Repeater health monitoring page"""
+            return render_template('repeater_health.html')
         
         # Favicon routes
         @self.app.route('/apple-touch-icon.png')
@@ -1175,6 +1203,493 @@ class BotDataViewer:
                 return jsonify(contacts)
             except Exception as e:
                 self.logger.error(f"Error getting contacts: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/contacts/sync', methods=['POST'])
+        def api_contacts_sync():
+            """Request a contact sync from the bot via operation queue"""
+            try:
+                conn = self._get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO channel_operations
+                    (operation_type, status)
+                    VALUES (?, 'pending')
+                ''', ('sync_contacts',))
+                operation_id = cursor.lastrowid
+                conn.commit()
+                return jsonify({
+                    'success': True,
+                    'pending': True,
+                    'operation_id': operation_id,
+                    'message': 'Contact sync queued'
+                })
+            except Exception as e:
+                self.logger.error(f"Error queueing contact sync: {e}")
+                return jsonify({'success': False, 'error': str(e)}), 500
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+        def _flatten_numeric_values(value: Any, prefix: str = "") -> Dict[str, Any]:
+            metrics: Dict[str, Any] = {}
+            if isinstance(value, dict):
+                for key, val in value.items():
+                    next_prefix = f"{prefix}.{key}" if prefix else str(key)
+                    metrics.update(_flatten_numeric_values(val, next_prefix))
+            elif isinstance(value, list):
+                # Lists are ignored for numeric metrics to keep keys stable
+                return metrics
+            elif isinstance(value, (int, float)) and not isinstance(value, bool):
+                if prefix:
+                    metrics[prefix] = float(value)
+            elif isinstance(value, str):
+                if prefix:
+                    metrics[prefix] = value
+            return metrics
+
+        def _repeater_health_enabled():
+            return self.config.getboolean('Repeater_Health', 'web_viewer_enabled', fallback=False)
+
+        @self.app.route('/api/repeater-health/targets')
+        def api_repeater_health_targets():
+            """Get monitored repeater targets"""
+            try:
+                if not _repeater_health_enabled():
+                    return jsonify({'error': 'Repeater health not enabled'}), 403
+                targets = self.repeater_health_manager.get_monitor_targets(include_disabled=True)
+                return jsonify({'targets': targets})
+            except Exception as e:
+                self.logger.error(f"Error getting repeater health targets: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/repeater-health/targets', methods=['POST'])
+        def api_repeater_health_add_target():
+            """Add or update a monitored repeater target"""
+            try:
+                if not _repeater_health_enabled():
+                    return jsonify({'error': 'Repeater health not enabled'}), 403
+                data = request.get_json() or {}
+                public_key = data.get('public_key')
+                name = data.get('name')
+                source = data.get('source', 'manual')
+                enabled = bool(data.get('enabled', True))
+                if not public_key:
+                    return jsonify({'error': 'public_key required'}), 400
+                self.repeater_health_manager.upsert_monitor_target(
+                    public_key=public_key,
+                    name=name,
+                    source=source,
+                    enabled=enabled,
+                )
+                return jsonify({'success': True})
+            except Exception as e:
+                self.logger.error(f"Error adding repeater health target: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/repeater-health/targets/<public_key>/enable', methods=['POST'])
+        def api_repeater_health_enable_target(public_key):
+            """Enable or disable a monitored repeater target"""
+            try:
+                if not _repeater_health_enabled():
+                    return jsonify({'error': 'Repeater health not enabled'}), 403
+                data = request.get_json() or {}
+                enabled = bool(data.get('enabled', True))
+                self.repeater_health_manager.set_target_enabled(public_key, enabled)
+                return jsonify({'success': True})
+            except Exception as e:
+                self.logger.error(f"Error updating repeater health target: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/repeater-health/targets/<public_key>/refresh', methods=['POST'])
+        def api_repeater_health_refresh_target(public_key):
+            """Trigger an immediate health poll for a target"""
+            try:
+                if not _repeater_health_enabled():
+                    return jsonify({'error': 'Repeater health not enabled'}), 403
+                conn = self._get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO channel_operations
+                    (operation_type, channel_name, status)
+                    VALUES (?, ?, 'pending')
+                ''', ('repeater_health_poll', public_key))
+                operation_id = cursor.lastrowid
+                conn.commit()
+                return jsonify({'success': True, 'pending': True, 'operation_id': operation_id})
+            except Exception as e:
+                self.logger.error(f"Error queueing repeater health poll: {e}")
+                return jsonify({'error': str(e)}), 500
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+        @self.app.route('/api/repeater-health/targets/<public_key>/password', methods=['POST'])
+        def api_repeater_health_set_password(public_key):
+            """Set or clear a per-target repeater password."""
+            try:
+                if not _repeater_health_enabled():
+                    return jsonify({'error': 'Repeater health not enabled'}), 403
+                data = request.get_json() or {}
+                password = data.get('password', '')
+                if not hasattr(self, 'repeater_health_manager') or not self.repeater_health_manager:
+                    return jsonify({'error': 'Repeater health manager not available'}), 500
+                self.repeater_health_manager.set_target_password(public_key, password)
+                return jsonify({'success': True})
+            except Exception as e:
+                self.logger.error(f"Error setting repeater password: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/repeater-health/targets/<public_key>/flush', methods=['POST'])
+        def api_repeater_health_flush_target(public_key):
+            """Flush stored samples for a target."""
+            try:
+                if not _repeater_health_enabled():
+                    return jsonify({'error': 'Repeater health not enabled'}), 403
+                if not hasattr(self, 'repeater_health_manager') or not self.repeater_health_manager:
+                    return jsonify({'error': 'Repeater health manager not available'}), 500
+                deleted = self.repeater_health_manager.flush_target_samples(public_key)
+                return jsonify({'success': True, 'deleted': deleted})
+            except Exception as e:
+                self.logger.error(f"Error flushing repeater samples: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/repeater-health/targets/<public_key>', methods=['DELETE'])
+        def api_repeater_health_remove_target(public_key):
+            """Remove a monitored repeater target"""
+            try:
+                if not _repeater_health_enabled():
+                    return jsonify({'error': 'Repeater health not enabled'}), 403
+                self.repeater_health_manager.remove_target(public_key)
+                return jsonify({'success': True})
+            except Exception as e:
+                self.logger.error(f"Error removing repeater health target: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/repeater-health/contacts')
+        def api_repeater_health_contacts():
+            """Get repeater contacts for selection"""
+            try:
+                if not _repeater_health_enabled():
+                    return jsonify({'error': 'Repeater health not enabled'}), 403
+                conn = self._get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT public_key, name, role, last_heard
+                    FROM complete_contact_tracking
+                    WHERE role IN ('repeater', 'roomserver')
+                    ORDER BY name, public_key
+                ''')
+                rows = cursor.fetchall()
+                contacts = []
+                for row in rows:
+                    contacts.append({
+                        'public_key': row['public_key'],
+                        'name': row['name'],
+                        'role': row['role'],
+                        'last_heard': row['last_heard']
+                    })
+                return jsonify({'contacts': contacts})
+            except Exception as e:
+                self.logger.error(f"Error getting repeater contacts: {e}")
+                return jsonify({'error': str(e)}), 500
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+        @self.app.route('/api/repeater-health/metrics')
+        def api_repeater_health_metrics():
+            """Get available numeric metric keys for a repeater"""
+            try:
+                if not _repeater_health_enabled():
+                    return jsonify({'error': 'Repeater health not enabled'}), 403
+                public_key = request.args.get('public_key')
+                days = request.args.get('days', default=7, type=int)
+                sample_type = request.args.get('sample_type', default='snapshot')
+                if not public_key:
+                    return jsonify({'error': 'public_key required'}), 400
+
+                conn = self._get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT payload_json
+                    FROM repeater_health_samples
+                    WHERE public_key = ?
+                      AND sample_type = ?
+                      AND sample_time >= datetime('now', '-' || ? || ' days')
+                    ORDER BY sample_time DESC
+                    LIMIT 500
+                ''', (public_key, sample_type, days))
+                rows = cursor.fetchall()
+
+                metric_keys = set()
+                for row in rows:
+                    payload_json = row['payload_json'] or '{}'
+                    try:
+                        payload = json.loads(payload_json)
+                    except Exception:
+                        payload = {}
+                    metrics = _flatten_numeric_values(payload)
+                    metric_keys.update(metrics.keys())
+
+                return jsonify({'metrics': sorted(metric_keys)})
+            except Exception as e:
+                self.logger.error(f"Error getting repeater health metrics: {e}")
+                return jsonify({'error': str(e)}), 500
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+        @self.app.route('/api/repeater-health/series')
+        def api_repeater_health_series():
+            """Get time series for a metric from repeater health samples"""
+            try:
+                if not _repeater_health_enabled():
+                    return jsonify({'error': 'Repeater health not enabled'}), 403
+                public_key = request.args.get('public_key')
+                metric = request.args.get('metric')
+                days = request.args.get('days', default=7, type=int)
+                sample_type = request.args.get('sample_type', default='snapshot')
+                if not public_key or not metric:
+                    return jsonify({'error': 'public_key and metric required'}), 400
+
+                conn = self._get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT sample_time, payload_json
+                    FROM repeater_health_samples
+                    WHERE public_key = ?
+                      AND sample_type = ?
+                      AND sample_time >= datetime('now', '-' || ? || ' days')
+                    ORDER BY sample_time ASC
+                    LIMIT 1000
+                ''', (public_key, sample_type, days))
+                rows = cursor.fetchall()
+
+                points = []
+                for row in rows:
+                    payload_json = row['payload_json'] or '{}'
+                    try:
+                        payload = json.loads(payload_json)
+                    except Exception:
+                        payload = {}
+                    metrics = _flatten_numeric_values(payload)
+                    if metric in metrics:
+                        points.append({
+                            'time': row['sample_time'],
+                            'value': metrics[metric],
+                        })
+
+                return jsonify({'points': points})
+            except Exception as e:
+                self.logger.error(f"Error getting repeater health series: {e}")
+                return jsonify({'error': str(e)}), 500
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+        @self.app.route('/api/repeater-health/neighbors/latest')
+        def api_repeater_health_neighbors_latest():
+            """Get latest neighbors snapshot for a repeater"""
+            try:
+                if not _repeater_health_enabled():
+                    return jsonify({'error': 'Repeater health not enabled'}), 403
+                public_key = request.args.get('public_key')
+                if not public_key:
+                    return jsonify({'error': 'public_key required'}), 400
+
+                conn = self._get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT sample_time, neighbors_json, success, error_message
+                    FROM repeater_neighbors_samples
+                    WHERE public_key = ?
+                    ORDER BY sample_time DESC
+                    LIMIT 1
+                ''', (public_key,))
+                row = cursor.fetchone()
+                if not row:
+                    return jsonify({'neighbors': None})
+                try:
+                    neighbors = json.loads(row['neighbors_json']) if row['neighbors_json'] else None
+                except Exception:
+                    neighbors = None
+                return jsonify({
+                    'neighbors': neighbors,
+                    'sample_time': row['sample_time'],
+                    'success': bool(row['success']),
+                    'error_message': row['error_message']
+                })
+            except Exception as e:
+                self.logger.error(f"Error getting repeater neighbors: {e}")
+                return jsonify({'error': str(e)}), 500
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+        @self.app.route('/api/repeater-health/targets/summary')
+        def api_repeater_health_targets_summary():
+            """Get latest metrics per monitored target"""
+            try:
+                if not _repeater_health_enabled():
+                    return jsonify({'error': 'Repeater health not enabled'}), 403
+                conn = self._get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT t.public_key, t.name, t.enabled,
+                           s.sample_time, s.payload_json
+                    FROM repeater_monitor_targets t
+                    LEFT JOIN repeater_health_samples s
+                      ON s.public_key = t.public_key
+                    WHERE s.sample_time = (
+                        SELECT MAX(sample_time)
+                        FROM repeater_health_samples
+                        WHERE public_key = t.public_key
+                    )
+                    ORDER BY t.name, t.public_key
+                ''')
+                rows = cursor.fetchall()
+                results = []
+                all_metrics = set()
+                for row in rows:
+                    payload = {}
+                    if row['payload_json']:
+                        try:
+                            payload = json.loads(row['payload_json'])
+                        except Exception:
+                            payload = {}
+                    metrics = _flatten_numeric_values(payload)
+                    all_metrics.update(metrics.keys())
+                    results.append({
+                        'public_key': row['public_key'],
+                        'name': row['name'],
+                        'enabled': bool(row['enabled']),
+                        'sample_time': row['sample_time'],
+                        'metrics': metrics
+                    })
+                return jsonify({'targets': results, 'metric_keys': sorted(all_metrics)})
+            except Exception as e:
+                self.logger.error(f"Error getting repeater health summary: {e}")
+                return jsonify({'error': str(e)}), 500
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+        @self.app.route('/api/repeater-health/targets/history')
+        def api_repeater_health_targets_history():
+            """Get last 10 samples for a target"""
+            try:
+                if not _repeater_health_enabled():
+                    return jsonify({'error': 'Repeater health not enabled'}), 403
+                public_key = request.args.get('public_key')
+                if not public_key:
+                    return jsonify({'error': 'public_key required'}), 400
+                conn = self._get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT sample_time, payload_json
+                    FROM repeater_health_samples
+                    WHERE public_key = ?
+                    ORDER BY sample_time DESC
+                    LIMIT 10
+                ''', (public_key,))
+                rows = cursor.fetchall()
+                samples = []
+                for row in rows:
+                    payload = {}
+                    if row['payload_json']:
+                        try:
+                            payload = json.loads(row['payload_json'])
+                        except Exception:
+                            payload = {}
+                    metrics = _flatten_numeric_values(payload)
+                    samples.append({
+                        'sample_time': row['sample_time'],
+                        'metrics': metrics
+                    })
+                return jsonify({'samples': samples})
+            except Exception as e:
+                self.logger.error(f"Error getting repeater health history: {e}")
+                return jsonify({'error': str(e)}), 500
+            finally:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+        @self.app.route('/api/repeater-health/settings', methods=['GET', 'POST'])
+        def api_repeater_health_settings():
+            """Get or set repeater health polling settings."""
+            try:
+                if not _repeater_health_enabled():
+                    return jsonify({'error': 'Repeater health not enabled'}), 403
+                if request.method == 'GET':
+                    value = self.db_manager.get_metadata('repeater_health_poll_interval')
+                    seconds = int(value) if value else None
+                    minutes = (seconds // 60) if seconds else None
+                    refresh_delay = self.db_manager.get_metadata('repeater_health_summary_refresh_delay')
+                    refresh_delay_ms = int(refresh_delay) if refresh_delay else None
+                    return jsonify({
+                        'poll_interval_minutes': minutes,
+                        'summary_refresh_delay_ms': refresh_delay_ms
+                    })
+
+                data = request.get_json() or {}
+                poll_interval_minutes = data.get('poll_interval_minutes')
+                summary_refresh_delay_ms = data.get('summary_refresh_delay_ms')
+                password = data.get('repeater_password')
+                if poll_interval_minutes is None:
+                    poll_interval_minutes = None
+
+                if poll_interval_minutes is not None:
+                    poll_interval_minutes = int(poll_interval_minutes)
+                    if poll_interval_minutes < 1:
+                        return jsonify({'error': 'poll_interval_minutes must be >= 1'}), 400
+                    poll_interval_seconds = poll_interval_minutes * 60
+                    self.db_manager.set_metadata('repeater_health_poll_interval', str(poll_interval_seconds))
+
+                if summary_refresh_delay_ms is not None:
+                    summary_refresh_delay_ms = int(summary_refresh_delay_ms)
+                    if summary_refresh_delay_ms < 500:
+                        return jsonify({'error': 'summary_refresh_delay_ms must be >= 500'}), 400
+                    self.db_manager.set_metadata('repeater_health_summary_refresh_delay', str(summary_refresh_delay_ms))
+
+                if password is not None:
+                    from cryptography.fernet import Fernet
+                    key_path = resolve_path("data/.repeater_health_key", self.bot_root)
+                    if os.path.exists(key_path):
+                        with open(key_path, "rb") as fh:
+                            key = fh.read().strip()
+                    else:
+                        os.makedirs(os.path.dirname(key_path), exist_ok=True)
+                        key = Fernet.generate_key()
+                        with open(key_path, "wb") as fh:
+                            fh.write(key)
+                        os.chmod(key_path, 0o600)
+                    token = Fernet(key).encrypt(password.encode('utf-8')).decode('utf-8')
+                    self.db_manager.set_metadata('repeater_health_password', token)
+
+                return jsonify({
+                    'success': True,
+                    'poll_interval_minutes': poll_interval_minutes,
+                    'summary_refresh_delay_ms': summary_refresh_delay_ms
+                })
+            except Exception as e:
+                self.logger.error(f"Error updating repeater health settings: {e}")
                 return jsonify({'error': str(e)}), 500
         
         @self.app.route('/api/cache')

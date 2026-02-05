@@ -2025,6 +2025,82 @@ class RepeaterManager:
         self.logger.info(f"Scan completed: {cataloged_count} new repeaters cataloged, {updated_count} existing repeaters updated from {len(contacts)} contacts")
         self.logger.info(f"Scan summary: {processed_count} contacts processed, {cataloged_count + updated_count} repeaters processed")
         return cataloged_count
+
+    async def sync_contacts_to_tracking(self) -> int:
+        """Seed complete_contact_tracking from the device contact list.
+
+        This ensures the web viewer shows contacts even before adverts arrive.
+        """
+        if not hasattr(self.bot.meshcore, 'contacts') or not self.bot.meshcore.contacts:
+            self.logger.info("No device contacts available to sync into tracking table")
+            return 0
+
+        contacts = self.bot.meshcore.contacts
+        self.logger.info(f"Syncing {len(contacts)} device contacts into tracking table...")
+        synced = 0
+        current_time = datetime.now()
+
+        for contact_key, contact_data in contacts.items():
+            try:
+                public_key = contact_data.get('public_key', contact_key)
+                if not public_key:
+                    continue
+
+                name = contact_data.get('adv_name', contact_data.get('name', 'Unknown'))
+                device_type = 'Companion'
+                contact_type = contact_data.get('type')
+                if contact_type == 3:
+                    device_type = 'RoomServer'
+                elif contact_type == 2:
+                    device_type = 'Repeater'
+
+                role = 'companion'
+                if self._is_repeater_device(contact_data):
+                    role = 'repeater' if device_type != 'RoomServer' else 'roomserver'
+
+                location_info = self._extract_location_data(contact_data, should_geocode=False)
+
+                existing = self.db_manager.execute_query(
+                    'SELECT id, last_heard, first_heard, advert_count, contact_source FROM complete_contact_tracking WHERE public_key = ?',
+                    (public_key,)
+                )
+
+                if existing:
+                    self.db_manager.execute_update('''
+                        UPDATE complete_contact_tracking
+                        SET name = ?, role = ?, device_type = ?,
+                            latitude = ?, longitude = ?, city = ?, state = ?, country = ?,
+                            last_heard = ?,
+                            is_currently_tracked = 1
+                        WHERE public_key = ?
+                    ''', (
+                        name, role, device_type,
+                        location_info.get('latitude'), location_info.get('longitude'),
+                        location_info.get('city'), location_info.get('state'), location_info.get('country'),
+                        current_time,
+                        public_key
+                    ))
+                else:
+                    self.db_manager.execute_update('''
+                        INSERT INTO complete_contact_tracking
+                        (public_key, name, role, device_type, first_heard, last_heard, advert_count,
+                         latitude, longitude, city, state, country, contact_source, is_currently_tracked)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                    ''', (
+                        public_key, name, role, device_type,
+                        current_time, current_time, 0,
+                        location_info.get('latitude'), location_info.get('longitude'),
+                        location_info.get('city'), location_info.get('state'), location_info.get('country'),
+                        'contact_list'
+                    ))
+
+                synced += 1
+            except Exception as exc:
+                self.logger.debug(f"Error syncing contact {contact_key}: {exc}")
+                continue
+
+        self.logger.info(f"Synced {synced} contacts into tracking table")
+        return synced
     
     async def get_repeater_contacts(self, active_only: bool = True) -> List[Dict]:
         """Get list of repeater contacts from database"""

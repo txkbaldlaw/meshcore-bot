@@ -1,0 +1,1183 @@
+{% extends "base.html" %}
+
+{% block title %}Repeater Health - MeshCore Bot Data Viewer{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h1 class="mb-3">
+            <i class="fas fa-heartbeat"></i> Repeater Health
+        </h1>
+        <p class="text-muted">
+            Monitor selected repeaters over time. Add targets from contacts or by public key.
+        </p>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-5 mb-4">
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="fas fa-satellite-dish"></i> Monitor Targets
+            </div>
+            <div class="card-body">
+                <div class="alert alert-success d-none" id="refresh-toast">Refresh queued.</div>
+                <div class="mb-3">
+                    <label class="form-label">Add by public key</label>
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="add-public-key" placeholder="ABCDEF1234...">
+                        <button class="btn btn-primary" id="add-public-key-btn">Add</button>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Add from contacts</label>
+                    <div class="input-group">
+                        <select class="form-select" id="contact-select">
+                            <option value="">Loading contacts...</option>
+                        </select>
+                        <button class="btn btn-outline-primary" id="add-contact-btn">Add</button>
+                    </div>
+                </div>
+                <div id="targets-error" class="error d-none"></div>
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover align-middle">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Public Key</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="targets-table">
+                            <tr><td colspan="4" class="text-muted">Loading targets...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <div class="col-lg-7 mb-4">
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="fas fa-chart-line"></i> Health Trends
+            </div>
+            <div class="card-body">
+                <div class="row g-3 mb-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Target</label>
+                        <select class="form-select" id="target-select">
+                            <option value="">Select target</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Metric</label>
+                        <select class="form-select" id="metric-select">
+                            <option value="">Select metric</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Days</label>
+                        <input type="number" class="form-control" id="days-input" value="7" min="1" max="90">
+                    </div>
+                    <div class="col-md-2 d-flex align-items-end">
+                        <button class="btn btn-outline-primary w-100" id="refresh-chart-btn">Refresh</button>
+                    </div>
+                </div>
+                <div id="chart-container">
+                    <canvas id="health-chart" height="120"></canvas>
+                    <div id="chart-empty" class="loading d-none">No data for this metric.</div>
+                </div>
+            </div>
+        </div>
+
+        {# Latest Neighbors hidden for now #}
+
+        <div class="card">
+            <div class="card-header">
+                <button class="btn btn-link text-decoration-none" type="button" data-bs-toggle="collapse" data-bs-target="#repeater-health-preferences">
+                    <i class="fas fa-sliders-h"></i> Repeater Health Preferences
+                </button>
+            </div>
+            <div id="repeater-health-preferences" class="collapse">
+                <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">Poll interval (minutes)</label>
+                    <div class="input-group" style="max-width: 260px;">
+                        <input type="number" class="form-control" id="poll-interval-input" min="1" step="1">
+                        <button class="btn btn-outline-primary" id="save-poll-interval">Save</button>
+                    </div>
+                    <div class="form-text">Applies to automatic polling. Default is 60 minutes.</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Summary refresh delay (seconds)</label>
+                    <div class="input-group" style="max-width: 260px;">
+                        <input type="number" class="form-control" id="summary-delay-input" min="1" step="1">
+                        <button class="btn btn-outline-primary" id="save-summary-delay">Save</button>
+                    </div>
+                    <div class="form-text">Delay before refreshing the summary after a manual refresh.</div>
+                </div>
+                <div class="mb-3">
+                    <button class="btn btn-outline-secondary" id="reset-repeater-health-preferences">Reset Defaults</button>
+                </div>
+                <div class="alert alert-success d-none" id="poll-settings-toast">Polling interval updated.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="fas fa-table"></i> Monitored Targets Summary
+            </div>
+            <div class="card-body">
+                <div class="mb-3 d-flex flex-wrap gap-2 align-items-center">
+                    <div class="dropdown">
+                        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                            Select Columns
+                        </button>
+                        <div class="dropdown-menu p-3" style="max-height: 300px; overflow-y: auto;">
+                            <div id="metric-toggles" class="d-flex flex-column gap-2"></div>
+                        </div>
+                    </div>
+                    <button class="btn btn-sm btn-outline-primary" id="export-summary">
+                        <i class="fas fa-file-export"></i> Export CSV
+                    </button>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover align-middle" id="summary-table">
+                        <thead>
+                            <tr id="summary-header-row"></tr>
+                        </thead>
+                        <tbody id="summary-table-body">
+                            <tr><td class="text-muted">Loading summary...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="text-muted">Drag headers to reorder columns. Use dropdown to hide/show metrics.</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+class RepeaterHealthUI {
+    constructor() {
+        this.targets = [];
+        this.contacts = [];
+        this.chart = null;
+        this.metricKeys = [];
+        this.summaryMetricKeys = [];
+        this.hiddenMetrics = new Set();
+        this.columnsOrder = [];
+        this.selectedMetrics = new Set();
+        this.defaultSummaryMetrics = [
+            'stats_core.battery_mv',
+            'stats_core.uptime_secs',
+            'stats_radio.last_rssi',
+            'stats_radio.last_snr',
+            'stats_radio.noise_floor',
+            'stats_radio.tx_air_secs',
+            'stats_radio.rx_air_secs',
+            'ver',
+            'battery_mv',
+            'uptime_secs',
+            'last_rssi',
+            'last_snr',
+            'noise_floor',
+            'tx_air_secs',
+            'rx_air_secs',
+            'fw ver'
+        ];
+        this.friendlyNames = {
+            'device_info.fw ver': 'FW Build Seq.',
+            'device_info.ver': 'Firmware Version',
+            'device_info.fw_build': 'FW Build Date',
+            'device_info.model': 'Model',
+            'device_info.max_channels': 'Max Channels',
+            'device_info.max_contacts': 'Max Contacts',
+            'device_info.temp_c': 'Temp (°C)',
+            'stats_core.battery_mv': 'Battery (V)',
+            'stats_core.errors': 'Errors',
+            'stats_core.queue_len': 'Message Queue',
+            'stats_core.uptime_secs': 'Uptime',
+            'stats_radio.last_rssi': 'Last RSSI',
+            'stats_radio.last_snr': 'Last SNR',
+            'stats_radio.noise_floor': 'Noise Floor',
+            'stats_radio.rx_air_secs': 'RX Airtime',
+            'stats_radio.tx_air_secs': 'TX Airtime'
+            ,
+            'fw ver': 'FW Build Seq.',
+            'fw_build': 'FW Build Date',
+            'model': 'Model',
+            'ver': 'Firmware Version',
+            'max_channels': 'Max Channels',
+            'max_contacts': 'Max Contacts',
+            'temp_c': 'Temp (°C)',
+            'battery_mv': 'Battery (V)',
+            'errors': 'Errors',
+            'queue_len': 'Message Queue',
+            'uptime_secs': 'Uptime',
+            'last_rssi': 'Last RSSI',
+            'last_snr': 'Last SNR',
+            'noise_floor': 'Noise Floor',
+            'rx_air_secs': 'RX Airtime',
+            'tx_air_secs': 'TX Airtime'
+        };
+        this.metricDescriptions = {
+            'device_info.fw ver': 'Firmware build sequence',
+            'device_info.max_channels': 'Maximum supported channels',
+            'device_info.max_contacts': 'Maximum supported contacts',
+            'device_info.temp_c': 'Temperature in Celsius',
+            'device_info.fw_build': 'Firmware build date',
+            'device_info.model': 'Device model',
+            'stats_core.battery_mv': 'Battery voltage in volts',
+            'stats_core.errors': 'Core error count',
+            'stats_core.queue_len': 'Messages waiting in the queue',
+            'stats_core.uptime_secs': 'Device uptime',
+            'stats_radio.last_rssi': 'Last received RSSI',
+            'stats_radio.last_snr': 'Last received SNR',
+            'stats_radio.noise_floor': 'Radio noise floor',
+            'stats_radio.rx_air_secs': 'Receive airtime',
+            'stats_radio.tx_air_secs': 'Transmit airtime',
+            'fw_build': 'Firmware build date',
+            'model': 'Device model'
+        };
+        this.friendlyNames = Object.assign(this.friendlyNames, {
+            'airtime': 'TX Airtime',
+            'bat': 'Battery (V)',
+            'direct_dups': 'Direct Duplicates',
+            'flood_dups': 'Flood Duplicates',
+            'full_evts': 'Queue Full Events',
+            'nb_recv': 'Messages Received',
+            'nb_sent': 'Messages Sent',
+            'recv_direct': 'Direct Received',
+            'recv_flood': 'Flood Received',
+            'rx_airtime': 'RX Airtime',
+            'sent_direct': 'Direct Sent',
+            'sent_flood': 'Flood Sent',
+            'tx_queue_len': 'TX Queue Length',
+            'uptime': 'Uptime'
+        });
+        this.metricDescriptions = Object.assign(this.metricDescriptions, {
+            'airtime': 'Transmit airtime',
+            'bat': 'Battery voltage in volts',
+            'direct_dups': 'Duplicate direct packets filtered',
+            'flood_dups': 'Duplicate flood packets filtered',
+            'full_evts': 'Queue full events',
+            'nb_recv': 'Total messages received',
+            'nb_sent': 'Total messages sent',
+            'recv_direct': 'Direct messages received',
+            'recv_flood': 'Flood messages received',
+            'rx_airtime': 'Receive airtime',
+            'sent_direct': 'Direct messages sent',
+            'sent_flood': 'Flood messages sent',
+            'tx_queue_len': 'Current transmit queue length',
+            'uptime': 'Device uptime'
+        });
+        this.summarySortColumn = 'sample_time';
+        this.summarySortDirection = 'desc';
+        this.summaryColumns = [];
+        this.summaryTargetByKey = {};
+        this.viewerTimezone = "{{ repeater_health_timezone }}";
+        this.summaryRefreshDelayMs = 3000;
+        this.initialize();
+    }
+
+    async initialize() {
+        await this.loadContacts();
+        await this.loadTargets();
+        this.renderTargetsTable();
+        this.populateContactSelect();
+        this.populateTargetSelect();
+        await this.loadSummary();
+        await this.loadPollingSettings();
+        this.setupHandlers();
+    }
+
+    setupHandlers() {
+        document.getElementById('add-public-key-btn').addEventListener('click', () => this.addByPublicKey());
+        document.getElementById('add-contact-btn').addEventListener('click', () => this.addFromContacts());
+        document.getElementById('refresh-chart-btn').addEventListener('click', () => this.refreshChart());
+        document.getElementById('target-select').addEventListener('change', () => this.onTargetChange());
+        document.getElementById('export-summary').addEventListener('click', () => this.exportSummaryCsv());
+        document.getElementById('save-poll-interval').addEventListener('click', () => this.savePollingSettings());
+        document.getElementById('password-modal-save').addEventListener('click', () => this.savePasswordModal());
+        document.getElementById('save-summary-delay').addEventListener('click', () => this.saveSummaryDelay());
+        document.getElementById('reset-repeater-health-preferences').addEventListener('click', () => this.resetRepeaterHealthPreferences());
+    }
+
+    async loadTargets() {
+        const response = await fetch('/api/repeater-health/targets');
+        const data = await response.json();
+        if (data.error) {
+            this.showError(data.error);
+            this.targets = [];
+            return;
+        }
+        this.targets = data.targets || [];
+    }
+
+    async loadContacts() {
+        const response = await fetch('/api/repeater-health/contacts');
+        const data = await response.json();
+        if (data.error) {
+            this.contacts = [];
+            return;
+        }
+        this.contacts = data.contacts || [];
+    }
+
+    showError(message) {
+        const errorEl = document.getElementById('targets-error');
+        errorEl.textContent = message;
+        errorEl.classList.remove('d-none');
+    }
+
+    clearError() {
+        const errorEl = document.getElementById('targets-error');
+        errorEl.classList.add('d-none');
+        errorEl.textContent = '';
+    }
+
+    populateContactSelect() {
+        const select = document.getElementById('contact-select');
+        select.innerHTML = '';
+        const existingKeys = new Set(this.targets.map(t => t.public_key));
+        if (this.contacts.length === 0) {
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = 'No repeater contacts found';
+            select.appendChild(option);
+            return;
+        }
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = 'Select repeater';
+        select.appendChild(placeholder);
+        this.contacts.filter(contact => !existingKeys.has(contact.public_key)).forEach(contact => {
+            const option = document.createElement('option');
+            const name = contact.name || 'Unknown';
+            const prefix = contact.public_key ? contact.public_key.slice(0, 6) : '';
+            option.value = contact.public_key;
+            option.textContent = `${name} (${prefix})`;
+            select.appendChild(option);
+        });
+    }
+
+    populateTargetSelect() {
+        const select = document.getElementById('target-select');
+        select.innerHTML = '';
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = 'Select target';
+        select.appendChild(placeholder);
+        this.targets.filter(t => t.enabled).forEach(target => {
+            const option = document.createElement('option');
+            const name = target.name || 'Unknown';
+            const prefix = target.public_key ? target.public_key.slice(0, 6) : '';
+            option.value = target.public_key;
+            option.textContent = `${name} (${prefix})`;
+            select.appendChild(option);
+        });
+    }
+
+    renderTargetsTable() {
+        const table = document.getElementById('targets-table');
+        table.innerHTML = '';
+        if (this.targets.length === 0) {
+            const row = document.createElement('tr');
+            row.innerHTML = '<td colspan="4" class="text-muted">No monitored repeaters yet.</td>';
+            table.appendChild(row);
+            return;
+        }
+        this.targets.forEach(target => {
+            const row = document.createElement('tr');
+            const name = target.name || 'Unknown';
+            const keyShort = target.public_key ? target.public_key.slice(0, 10) + '...' : '';
+            const statusBadge = target.enabled ? 'success' : 'secondary';
+            const statusText = target.enabled ? 'Enabled' : 'Disabled';
+            row.innerHTML = `
+                <td>${name}</td>
+                <td><code>${keyShort}</code></td>
+                <td><span class="badge bg-${statusBadge}">${statusText}</span></td>
+                <td>
+                    <button class="btn btn-sm btn-outline-success refresh-btn">Refresh Now</button>
+                    <button class="btn btn-sm btn-outline-secondary password-btn">Password</button>
+                    <button class="btn btn-sm btn-outline-danger flush-btn">Flush Data</button>
+                    <button class="btn btn-sm btn-outline-primary toggle-btn">
+                        ${target.enabled ? 'Disable' : 'Enable'}
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger remove-btn">Remove</button>
+                </td>
+            `;
+            row.querySelector('.refresh-btn').addEventListener('click', () => {
+                this.refreshTargetNow(target.public_key, row.querySelector('.refresh-btn'));
+            });
+            row.querySelector('.password-btn').addEventListener('click', () => {
+                this.openPasswordModal(target.public_key, name);
+            });
+            row.querySelector('.flush-btn').addEventListener('click', () => {
+                this.flushTargetData(target.public_key);
+            });
+            row.querySelector('.toggle-btn').addEventListener('click', () => {
+                this.toggleTarget(target.public_key, !target.enabled);
+            });
+            row.querySelector('.remove-btn').addEventListener('click', () => {
+                this.removeTarget(target.public_key);
+            });
+            table.appendChild(row);
+        });
+    }
+
+    async addByPublicKey() {
+        const input = document.getElementById('add-public-key');
+        const publicKey = input.value.trim();
+        if (!publicKey) {
+            this.showError('Enter a public key.');
+            return;
+        }
+        await this.addTarget(publicKey, null, 'manual');
+        input.value = '';
+    }
+
+    async addFromContacts() {
+        const select = document.getElementById('contact-select');
+        const publicKey = select.value;
+        if (!publicKey) {
+            this.showError('Select a repeater contact.');
+            return;
+        }
+        const contact = this.contacts.find(c => c.public_key === publicKey);
+        await this.addTarget(publicKey, contact ? contact.name : null, 'contact');
+        select.value = '';
+    }
+
+    async addTarget(publicKey, name, source) {
+        this.clearError();
+        const response = await fetch('/api/repeater-health/targets', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({public_key: publicKey, name: name, source: source, enabled: true})
+        });
+        const data = await response.json();
+        if (data.error) {
+            this.showError(data.error);
+            return;
+        }
+        await this.loadTargets();
+        this.renderTargetsTable();
+        this.populateTargetSelect();
+        this.populateContactSelect();
+        await this.loadSummary();
+    }
+
+    async toggleTarget(publicKey, enabled) {
+        await fetch(`/api/repeater-health/targets/${publicKey}/enable`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({enabled: enabled})
+        });
+        await this.loadTargets();
+        this.renderTargetsTable();
+        this.populateTargetSelect();
+        this.populateContactSelect();
+        await this.loadSummary();
+    }
+
+    async removeTarget(publicKey) {
+        await fetch(`/api/repeater-health/targets/${publicKey}`, {method: 'DELETE'});
+        await this.loadTargets();
+        this.renderTargetsTable();
+        this.populateTargetSelect();
+        this.populateContactSelect();
+        await this.loadSummary();
+    }
+
+    async refreshTargetNow(publicKey, buttonEl) {
+        if (buttonEl) {
+            buttonEl.disabled = true;
+            buttonEl.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Refreshing';
+        }
+        await fetch(`/api/repeater-health/targets/${publicKey}/refresh`, {method: 'POST'});
+        this.showToast('refresh-toast');
+        setTimeout(() => {
+            this.loadSummary();
+            this.refreshNeighbors();
+            if (buttonEl) {
+                buttonEl.disabled = false;
+                buttonEl.textContent = 'Refresh Now';
+            }
+        }, this.summaryRefreshDelayMs);
+    }
+
+    async loadPollingSettings() {
+        const response = await fetch('/api/repeater-health/settings');
+        const data = await response.json();
+        const input = document.getElementById('poll-interval-input');
+        if (data.poll_interval_minutes) {
+            input.value = data.poll_interval_minutes;
+        } else {
+            input.value = 60;
+        }
+        const summaryInput = document.getElementById('summary-delay-input');
+        if (data.summary_refresh_delay_ms) {
+            this.summaryRefreshDelayMs = data.summary_refresh_delay_ms;
+            summaryInput.value = Math.round(this.summaryRefreshDelayMs / 1000);
+        } else {
+            summaryInput.value = Math.round(this.summaryRefreshDelayMs / 1000);
+        }
+    }
+
+    async savePollingSettings() {
+        const input = document.getElementById('poll-interval-input');
+        const value = parseInt(input.value, 10);
+        if (!value || value < 1) {
+            return;
+        }
+        const response = await fetch('/api/repeater-health/settings', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({poll_interval_minutes: value})
+        });
+        const data = await response.json();
+        if (data.error) {
+            return;
+        }
+        this.showToast('poll-settings-toast');
+    }
+
+    async saveSummaryDelay() {
+        const input = document.getElementById('summary-delay-input');
+        const valueSeconds = parseInt(input.value, 10);
+        if (!valueSeconds || valueSeconds < 1) {
+            return;
+        }
+        const ms = valueSeconds * 1000;
+        const response = await fetch('/api/repeater-health/settings', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({summary_refresh_delay_ms: ms})
+        });
+        const data = await response.json();
+        if (data.error) {
+            return;
+        }
+        this.summaryRefreshDelayMs = ms;
+        this.showToast('poll-settings-toast');
+    }
+
+    async resetRepeaterHealthPreferences() {
+        const defaultPollMinutes = 60;
+        const defaultSummaryDelayMs = 3000;
+        await fetch('/api/repeater-health/settings', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                poll_interval_minutes: defaultPollMinutes,
+                summary_refresh_delay_ms: defaultSummaryDelayMs
+            })
+        });
+        document.getElementById('poll-interval-input').value = defaultPollMinutes;
+        document.getElementById('summary-delay-input').value = defaultSummaryDelayMs / 1000;
+        this.summaryRefreshDelayMs = defaultSummaryDelayMs;
+        this.showToast('poll-settings-toast');
+    }
+
+    openPasswordModal(publicKey, name) {
+        this.passwordTargetKey = publicKey;
+        const targetLabel = document.getElementById('password-modal-target');
+        targetLabel.textContent = `${name} (${publicKey.slice(0, 6)})`;
+        document.getElementById('password-modal-input').value = '';
+        const modal = new bootstrap.Modal(document.getElementById('passwordModal'));
+        modal.show();
+    }
+
+    async savePasswordModal() {
+        if (!this.passwordTargetKey) return;
+        const input = document.getElementById('password-modal-input');
+        const value = input.value || '';
+        const response = await fetch(`/api/repeater-health/targets/${this.passwordTargetKey}/password`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({password: value})
+        });
+        const data = await response.json();
+        if (data.error) {
+            return;
+        }
+        const modalEl = document.getElementById('passwordModal');
+        const modal = bootstrap.Modal.getInstance(modalEl);
+        if (modal) modal.hide();
+        this.showToast('poll-settings-toast');
+    }
+
+    async flushTargetData(publicKey) {
+        if (!confirm('Flush all stored samples for this repeater?')) return;
+        const response = await fetch(`/api/repeater-health/targets/${publicKey}/flush`, {method: 'POST'});
+        const data = await response.json();
+        if (data.error) {
+            return;
+        }
+        await this.loadSummary();
+    }
+
+    async onTargetChange() {
+        await this.refreshMetrics();
+        await this.refreshNeighbors();
+        await this.refreshChart();
+    }
+
+    async loadSummary() {
+        const response = await fetch('/api/repeater-health/targets/summary');
+        const data = await response.json();
+        if (data.error) {
+            return;
+        }
+        this.summaryMetricKeys = (data.metric_keys || []).filter(key => key !== 'device_info.ble_pin' && key !== 'ble_pin');
+        this.summaryTargets = data.targets || [];
+        this.loadPreferences();
+        this.renderMetricToggles();
+        this.renderSummaryTable();
+    }
+
+    renderMetricToggles() {
+        const container = document.getElementById('metric-toggles');
+        container.innerHTML = '';
+        this.summaryMetricKeys.forEach(key => {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'form-check';
+            const input = document.createElement('input');
+            input.className = 'form-check-input';
+            input.type = 'checkbox';
+            input.checked = this.selectedMetrics.has(key);
+            input.id = `toggle-${key}`;
+            input.addEventListener('change', () => {
+                if (input.checked) {
+                    this.selectedMetrics.add(key);
+                } else {
+                    this.selectedMetrics.delete(key);
+                }
+                this.savePreferences();
+                this.renderSummaryTable();
+            });
+            const label = document.createElement('label');
+            label.className = 'form-check-label';
+            label.setAttribute('for', input.id);
+            label.textContent = this.getFriendlyName(key);
+            wrapper.appendChild(input);
+            wrapper.appendChild(label);
+            container.appendChild(wrapper);
+        });
+    }
+
+    renderSummaryTable() {
+        const headerRow = document.getElementById('summary-header-row');
+        const body = document.getElementById('summary-table-body');
+        headerRow.innerHTML = '';
+        body.innerHTML = '';
+
+        const preferredMetrics = this.columnsOrder.length ? this.columnsOrder : [...this.summaryMetricKeys];
+        const columns = ['expand', 'name', 'sample_time', ...preferredMetrics.filter(col => this.selectedMetrics.has(col))];
+        this.summaryColumns = columns;
+        columns.forEach(col => {
+            const th = document.createElement('th');
+            th.textContent = col === 'expand' ? '' : (col === 'name' ? 'Repeater' : (col === 'sample_time' ? 'Latest Sample' : this.getFriendlyName(col)));
+            th.draggable = !['expand', 'name', 'sample_time'].includes(col);
+            th.dataset.column = col;
+            th.title = this.getMetricDescription(col);
+            th.style.cursor = 'pointer';
+            th.addEventListener('click', () => {
+                if (col === 'expand') return;
+                this.setSummarySort(col);
+                this.renderSummaryTable();
+            });
+            th.addEventListener('dragstart', (e) => {
+                if (['expand', 'name', 'sample_time'].includes(col)) {
+                    e.preventDefault();
+                    return;
+                }
+                e.dataTransfer.setData('text/plain', col);
+            });
+            th.addEventListener('dragover', (e) => e.preventDefault());
+            th.addEventListener('drop', (e) => {
+                e.preventDefault();
+                const from = e.dataTransfer.getData('text/plain');
+                const to = col;
+                if (['expand', 'name', 'sample_time'].includes(from) || ['expand', 'name', 'sample_time'].includes(to)) {
+                    return;
+                }
+                if (from === to) return;
+                const baseColumns = [...preferredMetrics];
+                const fromIndex = baseColumns.indexOf(from);
+                const toIndex = baseColumns.indexOf(to);
+                baseColumns.splice(fromIndex, 1);
+                baseColumns.splice(toIndex, 0, from);
+                this.columnsOrder = baseColumns;
+                this.savePreferences();
+                this.renderSummaryTable();
+            });
+            headerRow.appendChild(th);
+        });
+
+        if (!this.summaryTargets || this.summaryTargets.length === 0) {
+            const row = document.createElement('tr');
+            row.innerHTML = '<td class="text-muted">No summary data yet.</td>';
+            body.appendChild(row);
+            return;
+        }
+
+        this.summaryTargetByKey = {};
+        const sortedTargets = [...this.summaryTargets].sort((a, b) => this.compareSummary(a, b));
+        sortedTargets.forEach(target => {
+            const row = document.createElement('tr');
+            row.classList.add('summary-row');
+            row.dataset.publicKey = target.public_key;
+            columns.forEach(col => {
+                const td = document.createElement('td');
+                if (col === 'expand') {
+                    const btn = document.createElement('button');
+                    btn.className = 'btn btn-sm btn-outline-secondary';
+                    btn.innerHTML = '<i class="fas fa-chevron-right"></i>';
+                    btn.setAttribute('aria-expanded', 'false');
+                    btn.setAttribute('aria-label', 'Toggle history');
+                    btn.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            this.toggleHistoryRow(target.public_key, row, btn);
+                        }
+                    });
+                    btn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        this.toggleHistoryRow(target.public_key, row, btn);
+                    });
+                    td.appendChild(btn);
+                } else if (col === 'name') {
+                    td.textContent = target.name || target.public_key.slice(0, 6);
+                } else if (col === 'sample_time') {
+                    td.textContent = this.formatTimestamp(target.sample_time);
+                } else {
+                    const value = (target.metrics || {})[col];
+                    td.textContent = this.formatMetricValue(col, value);
+                }
+                row.appendChild(td);
+            });
+            this.summaryTargetByKey[target.public_key] = target;
+            body.appendChild(row);
+        });
+    }
+
+    async toggleHistoryRow(publicKey, row, buttonEl) {
+        const existingRows = document.querySelectorAll(`[id^="history-${publicKey}"]`);
+        if (existingRows.length > 0) {
+            existingRows.forEach(rowEl => rowEl.remove());
+            if (buttonEl) {
+                buttonEl.innerHTML = '<i class="fas fa-chevron-right"></i>';
+                buttonEl.setAttribute('aria-expanded', 'false');
+            }
+            row.classList.remove('table-active');
+            return;
+        }
+        const response = await fetch(`/api/repeater-health/targets/history?public_key=${encodeURIComponent(publicKey)}`);
+        const data = await response.json();
+        if (data.error) {
+            return;
+        }
+        const historyRow = document.createElement('tr');
+        historyRow.id = `history-${publicKey}`;
+        const samples = data.samples || [];
+        const latest = this.summaryTargetByKey[publicKey];
+        const latestTime = latest ? latest.sample_time : null;
+        const filteredSamples = latestTime ? samples.filter(s => s.sample_time !== latestTime) : samples;
+        if (samples.length === 0 || filteredSamples.length === 0) {
+            const cell = document.createElement('td');
+            cell.colSpan = row.children.length;
+            cell.className = 'text-muted';
+            cell.textContent = 'No history available.';
+            historyRow.appendChild(cell);
+        } else {
+            let insertAfter = row;
+            filteredSamples.forEach((sample, index) => {
+                const sampleRow = document.createElement('tr');
+                sampleRow.id = index === 0 ? `history-${publicKey}` : `history-${publicKey}-${index}`;
+                this.summaryColumns.forEach(col => {
+                    const td = document.createElement('td');
+                    td.className = 'text-muted';
+                    if (col === 'expand') {
+                        td.textContent = '';
+                    } else if (col === 'name') {
+                        td.textContent = '';
+                    } else if (col === 'sample_time') {
+                        td.textContent = this.formatTimestamp(sample.sample_time);
+                    } else {
+                        const value = (sample.metrics || {})[col];
+                        td.textContent = this.formatMetricValue(col, value);
+                    }
+                    sampleRow.appendChild(td);
+                });
+                row.parentNode.insertBefore(sampleRow, insertAfter.nextSibling);
+                insertAfter = sampleRow;
+            });
+            if (buttonEl) {
+                buttonEl.innerHTML = '<i class="fas fa-chevron-down"></i>';
+                buttonEl.setAttribute('aria-expanded', 'true');
+            }
+        }
+        row.parentNode.insertBefore(historyRow, row.nextSibling);
+        row.classList.add('table-active');
+    }
+
+    exportSummaryCsv() {
+        const columns = this.columnsOrder.length
+            ? this.columnsOrder.filter(col => !['expand'].includes(col) && (col === 'name' || col === 'sample_time' || this.selectedMetrics.has(col)))
+            : ['name', 'sample_time', ...this.summaryMetricKeys.filter(k => this.selectedMetrics.has(k))];
+
+        const lines = [];
+        lines.push(columns.map(col => this.csvEscape(this.getFriendlyName(col))).join(','));
+        (this.summaryTargets || []).forEach(target => {
+            const row = columns.map(col => {
+                if (col === 'name') return this.csvEscape(target.name || target.public_key);
+                if (col === 'sample_time') return this.csvEscape(this.formatTimestamp(target.sample_time));
+                const value = (target.metrics || {})[col];
+                return this.csvEscape(this.formatMetricValue(col, value));
+            });
+            lines.push(row.join(','));
+        });
+
+        const csvBlob = new Blob([lines.join('\n')], {type: 'text/csv'});
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(csvBlob);
+        link.download = 'repeater_health_summary.csv';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    csvEscape(value) {
+        const str = String(value ?? '');
+        if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+            return '"' + str.replace(/"/g, '""') + '"';
+        }
+        return str;
+    }
+
+    showToast(id) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.classList.remove('d-none');
+        setTimeout(() => el.classList.add('d-none'), 2000);
+    }
+
+    loadPreferences() {
+        try {
+            const selected = JSON.parse(localStorage.getItem('repeaterHealthSelectedMetrics') || '[]');
+            if (Array.isArray(selected) && selected.length > 0) {
+                this.selectedMetrics = new Set(selected);
+            }
+            const order = JSON.parse(localStorage.getItem('repeaterHealthColumnOrder') || '[]');
+            if (Array.isArray(order) && order.length > 0) {
+                this.columnsOrder = order;
+            }
+            if (this.selectedMetrics.size === 0) {
+                this.defaultSummaryMetrics.forEach(key => {
+                    if (this.summaryMetricKeys.includes(key)) {
+                        this.selectedMetrics.add(key);
+                    }
+                });
+            }
+        } catch (e) {
+            // ignore
+        }
+    }
+
+    savePreferences() {
+        try {
+            localStorage.setItem('repeaterHealthSelectedMetrics', JSON.stringify([...this.selectedMetrics]));
+            localStorage.setItem('repeaterHealthColumnOrder', JSON.stringify(this.columnsOrder));
+        } catch (e) {
+            // ignore
+        }
+    }
+
+    getFriendlyName(key) {
+        if (key === 'name') return 'Repeater';
+        if (key === 'sample_time') return 'Latest Sample';
+        if (key === 'expand') return '';
+        return this.friendlyNames[key] || key;
+    }
+
+    getMetricDescription(key) {
+        if (key === 'name') return 'Repeater name';
+        if (key === 'sample_time') return 'Time of latest sample';
+        if (key === 'expand') return 'Expand details';
+        return this.metricDescriptions[key] || this.getFriendlyName(key);
+    }
+
+    formatMetricValue(key, value) {
+        if (value === undefined || value === null || value === '') {
+            return '—';
+        }
+        if (key === 'device_info.batt_mv' || key === 'stats_core.battery_mv' || key === 'battery_mv' || key === 'bat') {
+            const num = Number(value);
+            if (Number.isFinite(num)) {
+                return (num / 1000).toFixed(3);
+            }
+        }
+        if (key === 'device_info.temp_c' || key === 'temp_c') {
+            const num = Number(value);
+            if (Number.isFinite(num)) {
+                return num.toFixed(1);
+            }
+        }
+        if (['stats_core.uptime_secs', 'stats_radio.tx_air_secs', 'stats_radio.rx_air_secs', 'uptime_secs', 'tx_air_secs', 'rx_air_secs', 'uptime', 'airtime', 'rx_airtime'].includes(key)) {
+            const num = Number(value);
+            if (Number.isFinite(num)) {
+                return this.formatDuration(num);
+            }
+        }
+        return value;
+    }
+
+    formatDuration(seconds) {
+        const total = Math.max(0, Math.floor(seconds));
+        const secs = total % 60;
+        const minsTotal = Math.floor(total / 60);
+        const mins = minsTotal % 60;
+        const hoursTotal = Math.floor(minsTotal / 60);
+        const hours = hoursTotal % 24;
+        const daysTotal = Math.floor(hoursTotal / 24);
+        const days = daysTotal % 30;
+        const months = Math.floor(daysTotal / 30);
+        return `${months}:${String(days).padStart(2, '0')}:${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
+
+    formatTimestamp(value) {
+        if (!value) return '—';
+        const date = this.parseSqliteTimestamp(value);
+        if (!date) return value;
+        try {
+            if (this.viewerTimezone) {
+                return new Intl.DateTimeFormat(undefined, {
+                    timeZone: this.viewerTimezone,
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit'
+                }).format(date);
+            }
+            return new Intl.DateTimeFormat(undefined, {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            }).format(date);
+        } catch (e) {
+            return value;
+        }
+    }
+
+    parseSqliteTimestamp(value) {
+        if (value instanceof Date) return value;
+        if (typeof value === 'number') return new Date(value * 1000);
+        if (typeof value !== 'string') return null;
+        const normalized = value.replace('T', ' ').replace('Z', '');
+        const parts = normalized.split(' ');
+        if (parts.length < 2) return new Date(value);
+        const [datePart, timePart] = parts;
+        const [year, month, day] = datePart.split('-').map(Number);
+        const [hour, minute, second] = timePart.split(':').map(Number);
+        if (!year || !month || !day) return new Date(value);
+        const sec = Number.isFinite(second) ? second : 0;
+        return new Date(Date.UTC(year, month - 1, day, hour || 0, minute || 0, sec));
+    }
+
+    setSummarySort(column) {
+        if (column === 'expand') return;
+        if (this.summarySortColumn === column) {
+            this.summarySortDirection = this.summarySortDirection === 'asc' ? 'desc' : 'asc';
+        } else {
+            this.summarySortColumn = column;
+            this.summarySortDirection = 'asc';
+        }
+    }
+
+    compareSummary(a, b) {
+        const col = this.summarySortColumn;
+        const dir = this.summarySortDirection === 'asc' ? 1 : -1;
+        let aVal;
+        let bVal;
+        if (col === 'name') {
+            aVal = (a.name || a.public_key || '').toLowerCase();
+            bVal = (b.name || b.public_key || '').toLowerCase();
+        } else if (col === 'sample_time') {
+            aVal = a.sample_time || '';
+            bVal = b.sample_time || '';
+        } else if (col === 'expand') {
+            return 0;
+        } else {
+            aVal = (a.metrics || {})[col];
+            bVal = (b.metrics || {})[col];
+        }
+        if (aVal === undefined || aVal === null) return 1 * dir;
+        if (bVal === undefined || bVal === null) return -1 * dir;
+        if (typeof aVal === 'number' && typeof bVal === 'number') {
+            return (aVal - bVal) * dir;
+        }
+        return String(aVal).localeCompare(String(bVal)) * dir;
+    }
+
+    async refreshMetrics() {
+        const target = document.getElementById('target-select').value;
+        const metricSelect = document.getElementById('metric-select');
+        metricSelect.innerHTML = '';
+        if (!target) {
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = 'Select metric';
+            metricSelect.appendChild(option);
+            return;
+        }
+        const days = document.getElementById('days-input').value || 7;
+        const response = await fetch(`/api/repeater-health/metrics?public_key=${encodeURIComponent(target)}&days=${days}&sample_type=status`);
+        const data = await response.json();
+        if (data.error) {
+            return;
+        }
+        this.metricKeys = (data.metrics || []).filter(key => key !== 'device_info.ble_pin' && key !== 'ble_pin');
+        if (this.metricKeys.length === 0) {
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = 'No numeric metrics found';
+            metricSelect.appendChild(option);
+            return;
+        }
+        this.metricKeys.forEach(key => {
+            const option = document.createElement('option');
+            option.value = key;
+            option.textContent = this.getFriendlyName(key);
+            metricSelect.appendChild(option);
+        });
+    }
+
+    async refreshChart() {
+        const target = document.getElementById('target-select').value;
+        const metric = document.getElementById('metric-select').value;
+        if (!target || !metric) {
+            this.renderEmptyChart('Select a target and metric.');
+            return;
+        }
+        const days = document.getElementById('days-input').value || 7;
+        const response = await fetch(`/api/repeater-health/series?public_key=${encodeURIComponent(target)}&metric=${encodeURIComponent(metric)}&days=${days}&sample_type=status`);
+        const data = await response.json();
+        if (data.error) {
+            this.renderEmptyChart(data.error);
+            return;
+        }
+        const points = data.points || [];
+        if (points.length === 0) {
+            this.renderEmptyChart('No data for this metric.');
+            return;
+        }
+        const labels = points.map(p => this.formatTimestamp(p.time));
+        const values = points.map(p => p.value);
+        this.renderChart(this.getFriendlyName(metric), labels, values);
+    }
+
+    renderChart(metric, labels, values) {
+        const ctx = document.getElementById('health-chart');
+        document.getElementById('chart-empty').classList.add('d-none');
+        if (this.chart) {
+            this.chart.destroy();
+        }
+        this.chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: metric,
+                    data: values,
+                    borderColor: '#0d6efd',
+                    backgroundColor: 'rgba(13, 110, 253, 0.2)',
+                    tension: 0.25,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    x: {
+                        ticks: {maxTicksLimit: 6}
+                    }
+                }
+            }
+        });
+    }
+
+    renderEmptyChart(message) {
+        if (this.chart) {
+            this.chart.destroy();
+            this.chart = null;
+        }
+        const empty = document.getElementById('chart-empty');
+        empty.textContent = message;
+        empty.classList.remove('d-none');
+    }
+
+    async refreshNeighbors() {
+        const target = document.getElementById('target-select').value;
+        const meta = document.getElementById('neighbors-meta');
+        const jsonEl = document.getElementById('neighbors-json');
+        if (!target) {
+            meta.textContent = 'Select a target to view neighbors.';
+            jsonEl.textContent = '{}';
+            return;
+        }
+        const response = await fetch(`/api/repeater-health/neighbors/latest?public_key=${encodeURIComponent(target)}`);
+        const data = await response.json();
+        if (data.error || !data.neighbors) {
+            meta.textContent = data.error || 'No neighbor data yet.';
+            jsonEl.textContent = '{}';
+            return;
+        }
+        meta.textContent = `Sampled at ${this.formatTimestamp(data.sample_time)}`;
+        jsonEl.textContent = JSON.stringify(data.neighbors, null, 2);
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    new RepeaterHealthUI();
+});
+</script>
+{% endblock %}
+
+{% block extra_modals %}
+<div class="modal fade" id="passwordModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Set Repeater Password</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-2 text-muted" id="password-modal-target"></div>
+        <input type="password" class="form-control" id="password-modal-input" placeholder="Enter password (leave blank to clear)">
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="password-modal-save">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -574,6 +574,27 @@ class MessageScheduler:
                         else:
                             error_msg = "Failed to remove channel"
                     
+                    elif op_type == 'sync_contacts':
+                        # Sync device contact list into tracking table
+                        if hasattr(self.bot, 'repeater_manager'):
+                            synced = await self.bot.repeater_manager.sync_contacts_to_tracking()
+                            success = True
+                            self.logger.info(f"Contact sync complete: {synced} contacts synced")
+                        else:
+                            error_msg = "Repeater manager not initialized"
+                    
+                    elif op_type == 'repeater_health_poll':
+                        public_key = op['channel_name']
+                        service = None
+                        if hasattr(self.bot, 'services'):
+                            service = self.bot.services.get('repeaterhealth')
+                        if service and hasattr(service, 'poll_once'):
+                            await service.poll_once(public_key)
+                            success = True
+                            self.logger.info(f"Repeater health poll triggered for {public_key[:8]}...")
+                        else:
+                            error_msg = "Repeater health service not available"
+                    
                     # Update operation status
                     with sqlite3.connect(db_path, timeout=30.0) as conn:
                         cursor = conn.cursor()

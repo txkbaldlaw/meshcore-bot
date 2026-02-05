@@ -65,6 +65,17 @@ debug = false
 auto_start = false
 ```
 
+### Recommended Database Location
+For forward compatibility (local, Docker, and backups), we recommend storing databases under `data/`:
+```ini
+[Bot]
+db_path = ./data/databases/meshcore_bot.db
+
+[Web_Viewer]
+db_path = ./data/databases/meshcore_bot.db
+```
+This keeps the repo root clean and aligns local and containerized deployments.
+
 ## Accessing the Viewer
 
 Once started, open your web browser and navigate to:

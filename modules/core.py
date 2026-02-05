@@ -1065,6 +1065,8 @@ use_zulu_time = false
         # Check if contacts are loaded (even if empty list)
         if hasattr(self.meshcore, 'contacts'):
             self.logger.info(f"Contacts loaded: {len(self.meshcore.contacts)} contacts")
+            if hasattr(self, 'repeater_manager'):
+                await self.repeater_manager.sync_contacts_to_tracking()
             return
         
         # Wait up to 30 seconds for contacts to load
@@ -1073,6 +1075,8 @@ use_zulu_time = false
         while wait_time < max_wait:
             if hasattr(self.meshcore, 'contacts'):
                 self.logger.info(f"Contacts loaded: {len(self.meshcore.contacts)} contacts")
+                if hasattr(self, 'repeater_manager'):
+                    await self.repeater_manager.sync_contacts_to_tracking()
                 return
             
             await asyncio.sleep(5)

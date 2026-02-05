@@ -120,8 +120,8 @@ startup_advert = false
 auto_manage_contacts = false
 
 # Database path for main bot database
-# Default: meshcore_bot.db
-db_path = meshcore_bot.db
+# Default: ./data/databases/meshcore_bot.db
+db_path = ./data/databases/meshcore_bot.db
 
 # Seconds to wait after a failed service restart before retrying (default: 300)
 service_restart_backoff_seconds = 300
@@ -1035,8 +1035,9 @@ debug = false
 auto_start = false
 
 # Database path for web viewer data
-# Default: bot_data.db
-db_path = bot_data.db
+# Default: ./data/databases/meshcore_bot.db
+# NB:  This path MUST point to the same db_path as the main bot uses for contacts and other data to display in the webviewer correctly
+db_path = ./data/databases/meshcore_bot.db
 
 # Additional hashtag channels to decode in the packet stream
 # The web viewer can decrypt GroupText messages from hashtag channels
@@ -1058,6 +1059,22 @@ decode_hashtag_channels =
 #          Settings for non-interactive bot services and plugins (weather, alerts, etc.)           #
 #                                                                                                  #
 ####################################################################################################
+
+[Repeater_Health]
+# Enable repeater health monitoring service
+enabled = false
+
+# Poll interval in seconds
+poll_interval_seconds = 3600
+
+# Delay between repeater polls (seconds)
+per_repeater_delay_seconds = 2
+
+# Enable neighbor snapshots (if meshcore supports neighbors command)
+neighbors_enabled = true
+
+# Show repeater health tab in the web viewer
+web_viewer_enabled = true
 
 [PacketCapture]
 # Enable packet capture service

@@ -8,6 +8,7 @@ import asyncio
 from .base_command import BaseCommand
 from ..models import MeshMessage
 from typing import List, Optional
+from ..repeater_health_manager import RepeaterHealthManager
 
 
 class RepeaterCommand(BaseCommand):
@@ -33,6 +34,11 @@ class RepeaterCommand(BaseCommand):
     def __init__(self, bot):
         super().__init__(bot)
         self.repeater_enabled = self.get_config_value('Repeater_Command', 'enabled', fallback=True, value_type='bool')
+        try:
+            self.repeater_health_manager = RepeaterHealthManager(bot)
+        except Exception as exc:
+            self.logger.warning(f"Repeater health manager unavailable: {exc}")
+            self.repeater_health_manager = None
 
     def can_execute(self, message: MeshMessage) -> bool:
         """Check if this command can be executed with the given message.
@@ -167,6 +173,10 @@ class RepeaterCommand(BaseCommand):
                     response = await self._handle_debug_purge()
                 elif subcommand == "geocode":
                     response = await self._handle_geocode(args)
+                elif subcommand == "health":
+                    response = await self._handle_health(args)
+                elif subcommand == "sync":
+                    response = await self._handle_sync()
                 elif subcommand == "help":
                     response = self.get_help()
                 else:
@@ -770,11 +780,76 @@ class RepeaterCommand(BaseCommand):
             str: Deprecation warning.
         """
         return self._get_deprecation_warning() + "\nGeocoding happens automatically in the backend."
+
+    async def _handle_health(self, args: List[str]) -> str:
+        """Manage repeater health monitor targets."""
+        if not self.repeater_health_manager:
+            return "Repeater health manager not available."
+
+        if not args:
+            return "Usage: repeater health add|remove|enable|disable|list"
+
+        action = args[0].lower()
+        if action == "add":
+            if len(args) < 2:
+                return "Usage: repeater health add <pubkey> [name]"
+            public_key = args[1]
+            name = " ".join(args[2:]) if len(args) > 2 else None
+            self.repeater_health_manager.upsert_monitor_target(
+                public_key=public_key,
+                name=name,
+                source="cli",
+                enabled=True
+            )
+            return "Repeater added to health monitor."
+
+        if action == "remove":
+            if len(args) < 2:
+                return "Usage: repeater health remove <pubkey>"
+            public_key = args[1]
+            self.repeater_health_manager.remove_target(public_key)
+            return "Repeater removed from health monitor."
+
+        if action == "enable":
+            if len(args) < 2:
+                return "Usage: repeater health enable <pubkey>"
+            public_key = args[1]
+            self.repeater_health_manager.set_target_enabled(public_key, True)
+            return "Repeater health monitor enabled."
+
+        if action == "disable":
+            if len(args) < 2:
+                return "Usage: repeater health disable <pubkey>"
+            public_key = args[1]
+            self.repeater_health_manager.set_target_enabled(public_key, False)
+            return "Repeater health monitor disabled."
+
+        if action == "list":
+            targets = self.repeater_health_manager.get_monitor_targets(include_disabled=True)
+            if not targets:
+                return "No repeater health targets."
+            lines = []
+            for target in targets[:5]:
+                name = target.get('name') or 'Unknown'
+                key = target.get('public_key', '')[:6]
+                state = "on" if target.get('enabled') else "off"
+                lines.append(f"{name} {key} {state}")
+            more = "" if len(targets) <= 5 else f" (+{len(targets)-5} more)"
+            return "Targets: " + "; ".join(lines) + more
+
+        return "Usage: repeater health add|remove|enable|disable|list"
+
+    async def _handle_sync(self) -> str:
+        """Sync device contact list into tracking table."""
+        if not hasattr(self.bot, 'repeater_manager'):
+            return "Repeater manager not initialized."
+        synced = await self.bot.repeater_manager.sync_contacts_to_tracking()
+        return f"Synced {synced} contacts into tracking table."
     
     def get_help(self) -> str:
         """Get help text for the repeater command (essential commands only)"""
         # Ultra-compact help for 150 char DM limit
-        return "status|purge all|purge companions [days]|auto-purge\n⚠️ Use web viewer or 'prefix' cmd to browse"
+        return "status|purge all|purge companions [days]|auto-purge|health|sync\n⚠️ Use web viewer or 'prefix' cmd to browse"
     
     async def _handle_geocode(self, args: List[str]) -> str:
         """Handle geocoding (DEPRECATED - automatic in backend).

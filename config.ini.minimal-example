@@ -135,8 +135,8 @@ startup_advert = false
 auto_manage_contacts = false
 
 # Database path for main bot database
-# Default: meshcore_bot.db
-db_path = meshcore_bot.db
+# Default: ./data/databases/meshcore_bot.db
+db_path = ./data/databases/meshcore_bot.db
 
 [Localization]
 # Language code for bot responses (en, es, es-MX, es-ES, fr, de, ja, etc.)
@@ -197,6 +197,31 @@ monitor_channels = general,test,emergency
 # true: Bot will respond to direct messages
 # false: Bot will ignore direct messages
 respond_to_dms = true
+
+[Web_Viewer]
+# Enable or disable the web data viewer
+enabled = false
+auto_start = false
+host = 127.0.0.1
+port = 8080
+# NB:  This path MUST point to the same db_path as the main bot uses for contacts and other data to display in the webviewer correctly
+db_path = ./data/databases/meshcore_bot.db
+
+[Repeater_Health]
+# Enable repeater health monitoring service
+enabled = false
+
+# Poll interval in seconds
+poll_interval_seconds = 3600
+
+# Delay between repeater polls (seconds)
+per_repeater_delay_seconds = 2
+
+# Enable neighbor snapshots (if meshcore supports neighbors command)
+neighbors_enabled = true
+
+# Show repeater health tab in the web viewer
+web_viewer_enabled = true
 
 [Banned_Users]
 # List of banned sender names (comma-separated). Matching is prefix (starts-with):

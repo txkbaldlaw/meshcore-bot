@@ -117,6 +117,9 @@
                         </span>
                         <input type="text" class="form-control" id="search-contacts" placeholder="Search contacts..." autocomplete="off">
                     </div>
+                    <button class="btn btn-sm btn-outline-secondary" id="sync-contacts">
+                        <i class="fas fa-cloud-download-alt"></i> Sync From Device
+                    </button>
                     <button class="btn btn-sm btn-primary" id="refresh-contacts">
                         <i class="fas fa-sync"></i> Refresh
                     </button>
@@ -224,6 +227,27 @@ class ModernContactsManager {
                 this.renderContactsData();
                 this.updateStatistics();
             });
+        });
+
+        document.getElementById('sync-contacts').addEventListener('click', async () => {
+            try {
+                const response = await fetch('/api/contacts/sync', {method: 'POST'});
+                const data = await response.json();
+                if (data.error) {
+                    this.showError('Failed to sync contacts: ' + data.error);
+                    return;
+                }
+                setTimeout(() => {
+                    this.loadContactsData().then(() => {
+                        this.applySearch();
+                        this.applySort();
+                        this.renderContactsData();
+                        this.updateStatistics();
+                    });
+                }, 1500);
+            } catch (error) {
+                this.showError('Failed to sync contacts: ' + error.message);
+            }
         });
         
         document.getElementById('search-contacts').addEventListener('input', (e) => {
