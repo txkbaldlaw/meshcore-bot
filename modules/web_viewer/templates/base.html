@@ -371,11 +371,13 @@
                             <i class="fas fa-database"></i> Cache
                         </a>
                     </li>
+                    {% if repeater_health_enabled %}
                     <li class="nav-item">
                         <a class="nav-link" href="/repeater-health">
                             <i class="fas fa-heart-pulse"></i> Repeater Health
                         </a>
                     </li>
+                    {% endif %}
                     {% if greeter_enabled %}
                     <li class="nav-item">
                         <a class="nav-link" href="/greeter">

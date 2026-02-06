@@ -200,6 +200,11 @@ dadjoke_enabled = true
 # Handle long jokes (over 130 characters)
 
 [Repeater_Health]
+# Enable or disable Repeater Health module (web viewer)
+# true: Repeater Health tab + API enabled
+# false: Repeater Health is disabled
+repeater_health_enabled = true
+
 # Enable storage for repeater health module (web viewer)
 # Database path for repeater health data (relative to bot root)
 db_path = data/databases/repeater_health.db

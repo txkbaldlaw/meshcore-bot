@@ -84,10 +84,21 @@ class BotDataViewer:
 
         # Initialize repeater health manager
         try:
-            self.repeater_health_manager = RepeaterHealthManager(self.config, self.logger, self.bot_root)
-            self.repeater_health_manager.start_background_refresh()
-        except Exception as e:
-            self.logger.error(f"Failed to initialize repeater health manager: {e}")
+            self.repeater_health_enabled = self.config.getboolean(
+                'Repeater_Health', 'repeater_health_enabled', fallback=True
+            )
+        except (configparser.NoSectionError, configparser.NoOptionError, ValueError):
+            self.repeater_health_enabled = True
+
+        if self.repeater_health_enabled:
+            try:
+                self.repeater_health_manager = RepeaterHealthManager(self.config, self.logger, self.bot_root)
+                self.repeater_health_manager.start_background_refresh()
+            except Exception as e:
+                self.logger.error(f"Failed to initialize repeater health manager: {e}")
+                self.repeater_health_manager = None
+        else:
+            self.logger.info("Repeater Health disabled via config")
             self.repeater_health_manager = None
         
         # Setup routes and SocketIO handlers
@@ -163,8 +174,18 @@ class BotDataViewer:
                 feed_manager_enabled = self.config.getboolean('Feed_Manager', 'feed_manager_enabled', fallback=False)
             except (configparser.NoSectionError, configparser.NoOptionError):
                 feed_manager_enabled = False
-            
-            return dict(greeter_enabled=greeter_enabled, feed_manager_enabled=feed_manager_enabled)
+            try:
+                repeater_health_enabled = self.config.getboolean(
+                    'Repeater_Health', 'repeater_health_enabled', fallback=True
+                )
+            except (configparser.NoSectionError, configparser.NoOptionError, ValueError):
+                repeater_health_enabled = True
+
+            return dict(
+                greeter_enabled=greeter_enabled,
+                feed_manager_enabled=feed_manager_enabled,
+                repeater_health_enabled=repeater_health_enabled
+            )
     
     def _init_databases(self):
         """Initialize database connections"""
@@ -255,6 +276,8 @@ class BotDataViewer:
     
     def _setup_routes(self):
         """Setup all Flask routes - complete feature parity"""
+        def _repeater_health_disabled():
+            return jsonify({'error': 'Repeater Health is disabled.'}), 403
         
         @self.app.route('/')
         def index():
@@ -300,6 +323,8 @@ class BotDataViewer:
         @self.app.route('/repeater-health')
         def repeater_health():
             """Repeater health monitoring page"""
+            if not self.repeater_health_enabled:
+                return render_template('error.html', error_message="Repeater Health is disabled."), 404
             return render_template('repeater_health.html')
         
         
@@ -360,6 +385,8 @@ class BotDataViewer:
         @self.app.route('/api/repeater-health/contacts')
         def api_repeater_health_contacts():
             """List repeater contacts from meshcli"""
+            if not self.repeater_health_enabled:
+                return _repeater_health_disabled()
             if not self.repeater_health_manager:
                 return jsonify({'error': 'Repeater health manager not available'}), 500
             try:
@@ -372,6 +399,8 @@ class BotDataViewer:
         @self.app.route('/api/repeater-health/targets', methods=['GET', 'POST'])
         def api_repeater_health_targets():
             """List or add repeater health targets"""
+            if not self.repeater_health_enabled:
+                return _repeater_health_disabled()
             if not self.repeater_health_manager:
                 return jsonify({'error': 'Repeater health manager not available'}), 500
             try:
@@ -390,6 +419,8 @@ class BotDataViewer:
         @self.app.route('/api/repeater-health/targets/<int:target_id>', methods=['DELETE'])
         def api_repeater_health_target_delete(target_id):
             """Delete a repeater health target"""
+            if not self.repeater_health_enabled:
+                return _repeater_health_disabled()
             if not self.repeater_health_manager:
                 return jsonify({'error': 'Repeater health manager not available'}), 500
             try:
@@ -402,6 +433,8 @@ class BotDataViewer:
         @self.app.route('/api/repeater-health/targets/<int:target_id>/refresh', methods=['POST'])
         def api_repeater_health_target_refresh(target_id):
             """Refresh a repeater health target"""
+            if not self.repeater_health_enabled:
+                return _repeater_health_disabled()
             if not self.repeater_health_manager:
                 return jsonify({'error': 'Repeater health manager not available'}), 500
             try:
@@ -414,6 +447,8 @@ class BotDataViewer:
         @self.app.route('/api/repeater-health/targets/<int:target_id>/flush', methods=['POST'])
         def api_repeater_health_target_flush(target_id):
             """Flush samples for a target"""
+            if not self.repeater_health_enabled:
+                return _repeater_health_disabled()
             if not self.repeater_health_manager:
                 return jsonify({'error': 'Repeater health manager not available'}), 500
             try:
@@ -426,6 +461,8 @@ class BotDataViewer:
         @self.app.route('/api/repeater-health/targets/<int:target_id>/toggle', methods=['POST'])
         def api_repeater_health_target_toggle(target_id):
             """Enable or disable a repeater health target"""
+            if not self.repeater_health_enabled:
+                return _repeater_health_disabled()
             if not self.repeater_health_manager:
                 return jsonify({'error': 'Repeater health manager not available'}), 500
             try:
@@ -440,6 +477,8 @@ class BotDataViewer:
         @self.app.route('/api/repeater-health/credentials', methods=['POST'])
         def api_repeater_health_credentials():
             """Set or clear repeater password"""
+            if not self.repeater_health_enabled:
+                return _repeater_health_disabled()
             if not self.repeater_health_manager:
                 return jsonify({'error': 'Repeater health manager not available'}), 500
             try:
@@ -472,6 +511,8 @@ class BotDataViewer:
         @self.app.route('/api/repeater-health/preferences', methods=['GET', 'POST'])
         def api_repeater_health_preferences():
             """Get or update repeater health preferences"""
+            if not self.repeater_health_enabled:
+                return _repeater_health_disabled()
             if not self.repeater_health_manager:
                 return jsonify({'error': 'Repeater health manager not available'}), 500
             try:
@@ -491,6 +532,8 @@ class BotDataViewer:
         @self.app.route('/api/repeater-health/refresh-all', methods=['POST'])
         def api_repeater_health_refresh_all():
             """Refresh all repeater health targets"""
+            if not self.repeater_health_enabled:
+                return _repeater_health_disabled()
             if not self.repeater_health_manager:
                 return jsonify({'error': 'Repeater health manager not available'}), 500
             try:
@@ -504,6 +547,8 @@ class BotDataViewer:
         @self.app.route('/api/repeater-health/trends')
         def api_repeater_health_trends():
             """Get health trend data for a target"""
+            if not self.repeater_health_enabled:
+                return _repeater_health_disabled()
             if not self.repeater_health_manager:
                 return jsonify({'error': 'Repeater health manager not available'}), 500
             try:
@@ -519,6 +564,8 @@ class BotDataViewer:
         @self.app.route('/api/repeater-health/samples')
         def api_repeater_health_samples():
             """Get recent samples for a target"""
+            if not self.repeater_health_enabled:
+                return _repeater_health_disabled()
             if not self.repeater_health_manager:
                 return jsonify({'error': 'Repeater health manager not available'}), 500
             try:

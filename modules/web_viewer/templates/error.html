@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+
+{% block title %}Error - MeshCore Bot{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="alert alert-warning">
+            {{ error_message or 'The requested page is not available.' }}
+        </div>
+    </div>
+</div>
+{% endblock %}
