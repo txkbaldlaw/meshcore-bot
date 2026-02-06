@@ -469,3 +469,6 @@ enabled = false
 [Feed_Command]
 # Enable or disable the feed command
 enabled = false
+
+[Repeater_Health]
+repeater_health_enabled = false
