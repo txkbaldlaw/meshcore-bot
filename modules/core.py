@@ -808,6 +808,10 @@ use_zulu_time = false
         # Check if contacts are loaded (even if empty list)
         if hasattr(self.meshcore, 'contacts'):
             self.logger.info(f"Contacts loaded: {len(self.meshcore.contacts)} contacts")
+            try:
+                self.repeater_manager.seed_contacts_from_device(self.meshcore.contacts)
+            except Exception as e:
+                self.logger.warning(f"Failed to seed contacts into tracking table: {e}")
             return
         
         # Wait up to 30 seconds for contacts to load
@@ -816,6 +820,10 @@ use_zulu_time = false
         while wait_time < max_wait:
             if hasattr(self.meshcore, 'contacts'):
                 self.logger.info(f"Contacts loaded: {len(self.meshcore.contacts)} contacts")
+                try:
+                    self.repeater_manager.seed_contacts_from_device(self.meshcore.contacts)
+                except Exception as e:
+                    self.logger.warning(f"Failed to seed contacts into tracking table: {e}")
                 return
             
             await asyncio.sleep(5)

@@ -24,6 +24,7 @@ sys.path.insert(0, project_root)
 
 from modules.db_manager import DBManager
 from modules.repeater_manager import RepeaterManager
+from modules.repeater_health_manager import RepeaterHealthManager
 from modules.utils import resolve_path
 
 class BotDataViewer:
@@ -80,6 +81,14 @@ class BotDataViewer:
         
         # Initialize databases
         self._init_databases()
+
+        # Initialize repeater health manager
+        try:
+            self.repeater_health_manager = RepeaterHealthManager(self.config, self.logger, self.bot_root)
+            self.repeater_health_manager.start_background_refresh()
+        except Exception as e:
+            self.logger.error(f"Failed to initialize repeater health manager: {e}")
+            self.repeater_health_manager = None
         
         # Setup routes and SocketIO handlers
         self._setup_routes()
@@ -287,6 +296,11 @@ class BotDataViewer:
         def radio():
             """Radio settings page"""
             return render_template('radio.html')
+
+        @self.app.route('/repeater-health')
+        def repeater_health():
+            """Repeater health monitoring page"""
+            return render_template('repeater_health.html')
         
         
         # API Routes
@@ -342,6 +356,146 @@ class BotDataViewer:
                     'error': str(e),
                     'status': 'error'
                 }), 500
+
+        @self.app.route('/api/repeater-health/contacts')
+        def api_repeater_health_contacts():
+            """List repeater contacts from meshcli"""
+            if not self.repeater_health_manager:
+                return jsonify({'error': 'Repeater health manager not available'}), 500
+            try:
+                contacts = self.repeater_health_manager.list_contacts()
+                return jsonify({'contacts': contacts})
+            except Exception as e:
+                self.logger.error(f"Error getting repeater health contacts: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/repeater-health/targets', methods=['GET', 'POST'])
+        def api_repeater_health_targets():
+            """List or add repeater health targets"""
+            if not self.repeater_health_manager:
+                return jsonify({'error': 'Repeater health manager not available'}), 500
+            try:
+                if request.method == 'POST':
+                    data = request.get_json(force=True)
+                    public_key = data.get('public_key')
+                    name = data.get('name')
+                    target = self.repeater_health_manager.add_target(public_key, name)
+                    return jsonify({'target': target})
+                targets = self.repeater_health_manager.list_targets()
+                return jsonify({'targets': targets})
+            except Exception as e:
+                self.logger.error(f"Error handling repeater health targets: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/repeater-health/targets/<int:target_id>', methods=['DELETE'])
+        def api_repeater_health_target_delete(target_id):
+            """Delete a repeater health target"""
+            if not self.repeater_health_manager:
+                return jsonify({'error': 'Repeater health manager not available'}), 500
+            try:
+                self.repeater_health_manager.remove_target(target_id)
+                return jsonify({'status': 'ok'})
+            except Exception as e:
+                self.logger.error(f"Error deleting repeater health target: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/repeater-health/targets/<int:target_id>/refresh', methods=['POST'])
+        def api_repeater_health_target_refresh(target_id):
+            """Refresh a repeater health target"""
+            if not self.repeater_health_manager:
+                return jsonify({'error': 'Repeater health manager not available'}), 500
+            try:
+                result = self.repeater_health_manager.refresh_target(target_id)
+                return jsonify(result)
+            except Exception as e:
+                self.logger.error(f"Error refreshing repeater health target: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/repeater-health/targets/<int:target_id>/flush', methods=['POST'])
+        def api_repeater_health_target_flush(target_id):
+            """Flush samples for a target"""
+            if not self.repeater_health_manager:
+                return jsonify({'error': 'Repeater health manager not available'}), 500
+            try:
+                self.repeater_health_manager.flush_target_samples(target_id)
+                return jsonify({'status': 'ok'})
+            except Exception as e:
+                self.logger.error(f"Error flushing repeater health samples: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/repeater-health/targets/<int:target_id>/toggle', methods=['POST'])
+        def api_repeater_health_target_toggle(target_id):
+            """Enable or disable a repeater health target"""
+            if not self.repeater_health_manager:
+                return jsonify({'error': 'Repeater health manager not available'}), 500
+            try:
+                data = request.get_json(force=True)
+                enabled = bool(data.get('enabled', True))
+                self.repeater_health_manager.set_target_enabled(target_id, enabled)
+                return jsonify({'status': 'ok', 'enabled': enabled})
+            except Exception as e:
+                self.logger.error(f"Error toggling repeater health target: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/repeater-health/preferences', methods=['GET', 'POST'])
+        def api_repeater_health_preferences():
+            """Get or update repeater health preferences"""
+            if not self.repeater_health_manager:
+                return jsonify({'error': 'Repeater health manager not available'}), 500
+            try:
+                if request.method == 'POST':
+                    data = request.get_json(force=True)
+                    enabled = bool(data.get('auto_refresh_enabled', False))
+                    interval = int(data.get('auto_refresh_interval_minutes', 30))
+                    prefs = self.repeater_health_manager.update_preferences(enabled, interval)
+                    return jsonify({'preferences': prefs})
+                prefs = self.repeater_health_manager.get_preferences()
+                return jsonify({'preferences': prefs})
+            except Exception as e:
+                self.logger.error(f"Error handling repeater health preferences: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/repeater-health/refresh-all', methods=['POST'])
+        def api_repeater_health_refresh_all():
+            """Refresh all repeater health targets"""
+            if not self.repeater_health_manager:
+                return jsonify({'error': 'Repeater health manager not available'}), 500
+            try:
+                result = self.repeater_health_manager.refresh_all_targets()
+                self.repeater_health_manager.record_auto_refresh()
+                return jsonify(result)
+            except Exception as e:
+                self.logger.error(f"Error refreshing all repeater health targets: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/repeater-health/trends')
+        def api_repeater_health_trends():
+            """Get health trend data for a target"""
+            if not self.repeater_health_manager:
+                return jsonify({'error': 'Repeater health manager not available'}), 500
+            try:
+                target_id = int(request.args.get('target_id', '0'))
+                metric = request.args.get('metric', 'last_rssi')
+                days = int(request.args.get('days', '7'))
+                data = self.repeater_health_manager.get_trends(target_id, metric, days)
+                return jsonify({'data': data})
+            except Exception as e:
+                self.logger.error(f"Error getting repeater health trends: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/repeater-health/samples')
+        def api_repeater_health_samples():
+            """Get recent samples for a target"""
+            if not self.repeater_health_manager:
+                return jsonify({'error': 'Repeater health manager not available'}), 500
+            try:
+                target_id = int(request.args.get('target_id', '0'))
+                limit = int(request.args.get('limit', '50'))
+                data = self.repeater_health_manager.get_samples(target_id, limit)
+                return jsonify({'samples': data})
+            except Exception as e:
+                self.logger.error(f"Error getting repeater health samples: {e}")
+                return jsonify({'error': str(e)}), 500
         
         @self.app.route('/api/stats')
         def api_stats():

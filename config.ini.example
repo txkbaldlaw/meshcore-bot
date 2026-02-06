@@ -198,6 +198,24 @@ seasonal_jokes = true
 dadjoke_enabled = true
 
 # Handle long jokes (over 130 characters)
+
+[Repeater_Health]
+# Enable storage for repeater health module (web viewer)
+# Database path for repeater health data (relative to bot root)
+db_path = data/databases/repeater_health.db
+
+# Path to meshcore-cli executable (meshcli)
+# Leave as meshcli if it's on PATH
+meshcli_path = meshcli
+
+# Timeout (seconds) for meshcli commands
+meshcli_timeout = 25
+
+# Use bot connection for repeater status queries (avoids BLE conflicts)
+use_bot_connection = true
+
+# Allow meshcli fallback if bot connection is unavailable
+meshcli_fallback = false
 # false: Fetch new jokes until we get a short one
 # true: Split long jokes into multiple messages
 long_jokes = false

@@ -9,7 +9,7 @@ import asyncio
 import json
 import time
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 from pathlib import Path
 from meshcore import EventType
 from .utils import rate_limited_nominatim_reverse_sync
@@ -3938,3 +3938,76 @@ class RepeaterManager:
         except Exception as e:
             self.logger.error(f"Error getting nodes per day stats: {e}")
             return {'error': str(e)}
+
+    def seed_contacts_from_device(self, contacts: Any) -> int:
+        """Seed complete_contact_tracking with current device contacts.
+
+        This provides an initial contact list even before new adverts arrive.
+        """
+        try:
+            if not contacts:
+                return 0
+
+            if isinstance(contacts, dict):
+                contact_list = list(contacts.values())
+            elif isinstance(contacts, list):
+                contact_list = contacts
+            else:
+                return 0
+
+            now = datetime.now()
+            inserted = 0
+            for contact in contact_list:
+                if not isinstance(contact, dict):
+                    continue
+                public_key = contact.get('public_key')
+                name = contact.get('adv_name') or contact.get('name') or public_key
+                if not public_key:
+                    continue
+
+                role = self._determine_contact_role(contact)
+                device_type = self._determine_device_type(contact.get('type', 0), name, contact)
+                out_path = contact.get('out_path')
+                out_path_len = contact.get('out_path_len')
+
+                # Insert if missing
+                rows = self.db_manager.execute_query(
+                    'SELECT id FROM complete_contact_tracking WHERE public_key = ?',
+                    (public_key,)
+                )
+                if rows:
+                    # Update name/path fields if they were missing
+                    self.db_manager.execute_update('''
+                        UPDATE complete_contact_tracking
+                        SET name = COALESCE(NULLIF(name, ''), ?),
+                            role = COALESCE(NULLIF(role, ''), ?),
+                            device_type = COALESCE(NULLIF(device_type, ''), ?),
+                            out_path = COALESCE(out_path, ?),
+                            out_path_len = COALESCE(out_path_len, ?)
+                        WHERE public_key = ?
+                    ''', (name, role, device_type, out_path, out_path_len, public_key))
+                    continue
+
+                self.db_manager.execute_update('''
+                    INSERT INTO complete_contact_tracking (
+                        public_key, name, role, device_type,
+                        first_heard, last_heard,
+                        advert_count, is_currently_tracked,
+                        last_advert_timestamp, contact_source,
+                        out_path, out_path_len
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    public_key, name, role, device_type,
+                    now, now,
+                    0, 1,
+                    now, 'device_contacts',
+                    out_path, out_path_len
+                ))
+                inserted += 1
+
+            if inserted:
+                self.logger.info(f"Seeded {inserted} contacts into tracking table")
+            return inserted
+        except Exception as e:
+            self.logger.error(f"Error seeding contacts from device: {e}")
+            return 0

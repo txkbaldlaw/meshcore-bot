@@ -1,0 +1,792 @@
+{% extends "base.html" %}
+
+{% block title %}Repeater Health - MeshCore Bot{% endblock %}
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h1 class="mb-2">
+            <i class="fas fa-heart-pulse"></i> Repeater Health
+        </h1>
+        <p class="text-muted">Monitor selected repeaters over time. Add targets from contacts or by public key.</p>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="fas fa-crosshairs"></i> Monitor Targets
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">Add by public key</label>
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="public-key-input" placeholder="ABCDEF1234...">
+                        <button class="btn btn-primary" id="add-public-key-btn" type="button">Add</button>
+                    </div>
+                </div>
+                <div class="mb-4">
+                    <label class="form-label">Add from contacts</label>
+                    <div class="input-group">
+                        <select class="form-select" id="contact-select">
+                            <option value="">Select repeater</option>
+                        </select>
+                        <button class="btn btn-primary" id="add-contact-btn" type="button">Add</button>
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-sm table-striped align-middle">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Name</th>
+                                <th>Public Key</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="targets-table-body">
+                            <tr>
+                                <td colspan="4" class="text-center">
+                                    <div class="loading">Loading targets...</div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="text-muted small mt-2" id="targets-status"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header">
+                <i class="fas fa-chart-line"></i> Health Trends
+            </div>
+            <div class="card-body">
+                <div class="row g-2 align-items-end mb-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Target</label>
+                        <select class="form-select" id="trend-target-select"></select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Metric</label>
+                        <select class="form-select" id="trend-metric-select">
+                            <option value="">Select a metric</option>
+                            <option value="last_rssi">Last RSSI</option>
+                            <option value="last_snr">Last SNR</option>
+                            <option value="battery_v">Battery (V)</option>
+                            <option value="noise_floor">Noise Floor</option>
+                            <option value="tx_queue_len">TX Queue</option>
+                            <option value="nb_recv">Packets Received</option>
+                            <option value="nb_sent">Packets Sent</option>
+                            <option value="sent_direct">Direct Sent</option>
+                            <option value="sent_flood">Flood Sent</option>
+                            <option value="recv_direct">Direct Received</option>
+                            <option value="recv_flood">Flood Received</option>
+                            <option value="airtime">TX Airtime</option>
+                            <option value="rx_airtime">RX Airtime</option>
+                            <option value="full_evts">Full Events</option>
+                            <option value="direct_dups">Direct Duplicates</option>
+                            <option value="flood_dups">Flood Duplicates</option>
+                            <option value="uptime">Uptime</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Days</label>
+                        <input type="number" min="1" max="90" class="form-control" id="trend-days-input" value="7">
+                    </div>
+                    <div class="col-md-2 d-grid">
+                        <button class="btn btn-outline-primary" id="refresh-trend-btn" type="button">Refresh</button>
+                    </div>
+                </div>
+                <canvas id="healthTrendChart" style="height: 220px;"></canvas>
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-header">
+                <button class="btn btn-link text-decoration-none" data-bs-toggle="collapse" data-bs-target="#repeaterHealthPrefs" aria-expanded="false" type="button">
+                    <i class="fas fa-sliders-h"></i> Repeater Health Preferences
+                </button>
+            </div>
+            <div id="repeaterHealthPrefs" class="collapse">
+                <div class="card-body">
+                    <div class="row g-3 align-items-end">
+                        <div class="col-md-4">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="auto-refresh-toggle">
+                                <label class="form-check-label" for="auto-refresh-toggle">Auto-refresh enabled</label>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Interval (minutes)</label>
+                            <input type="number" min="1" max="1440" class="form-control" id="auto-refresh-interval" value="30">
+                        </div>
+                        <div class="col-md-2 d-grid">
+                            <button class="btn btn-outline-primary" id="save-preferences-btn" type="button">Save</button>
+                        </div>
+                        <div class="col-md-2 d-grid">
+                            <button class="btn btn-outline-secondary" id="run-now-btn" type="button">Run Now</button>
+                        </div>
+                        <div class="col-md-12 text-muted small d-flex gap-3">
+                            <span id="preferences-status"></span>
+                            <span id="last-auto-refresh"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-3">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div><i class="fas fa-list"></i> Monitored Targets Summary</div>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-sm btn-outline-primary" id="summary-refresh-btn" type="button">
+                            <i class="fas fa-sync"></i> Refresh
+                        </button>
+                        <div class="dropdown">
+                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" type="button">
+                                Columns
+                            </button>
+                            <div class="dropdown-menu p-3" id="summary-columns-menu">
+                            <div class="form-check">
+                                <input class="form-check-input summary-col-toggle" type="checkbox" data-col="latest" id="col-latest" checked>
+                                <label class="form-check-label" for="col-latest">Latest Sample</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input summary-col-toggle" type="checkbox" data-col="battery" id="col-battery" checked>
+                                <label class="form-check-label" for="col-battery">Battery (V)</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input summary-col-toggle" type="checkbox" data-col="rssi" id="col-rssi" checked>
+                                <label class="form-check-label" for="col-rssi">Last RSSI</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input summary-col-toggle" type="checkbox" data-col="snr" id="col-snr" checked>
+                                <label class="form-check-label" for="col-snr">Last SNR</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input summary-col-toggle" type="checkbox" data-col="noise" id="col-noise" checked>
+                                <label class="form-check-label" for="col-noise">Noise Floor</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input summary-col-toggle" type="checkbox" data-col="direct" id="col-direct" checked>
+                                <label class="form-check-label" for="col-direct">Direct Sent</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input summary-col-toggle" type="checkbox" data-col="uptime" id="col-uptime" checked>
+                                <label class="form-check-label" for="col-uptime">Uptime</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input summary-col-toggle" type="checkbox" data-col="firmware" id="col-firmware" checked>
+                                <label class="form-check-label" for="col-firmware">Firmware</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input summary-col-toggle" type="checkbox" data-col="build" id="col-build" checked>
+                                <label class="form-check-label" for="col-build">FW Build Date</label>
+                            </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm table-striped table-hover align-middle">
+                        <thead class="table-dark">
+                            <tr>
+                                <th class="summary-sortable" data-sort="name">Repeater <i class="fas fa-sort ms-1"></i></th>
+                                <th class="summary-col summary-col-latest summary-sortable sort-active" data-sort="latest">Latest Sample <i class="fas fa-sort-down ms-1"></i></th>
+                                <th class="summary-col summary-col-battery summary-sortable" data-sort="battery">Battery (V) <i class="fas fa-sort ms-1"></i></th>
+                                <th class="summary-col summary-col-rssi summary-sortable" data-sort="rssi">Last RSSI <i class="fas fa-sort ms-1"></i></th>
+                                <th class="summary-col summary-col-snr summary-sortable" data-sort="snr">Last SNR <i class="fas fa-sort ms-1"></i></th>
+                                <th class="summary-col summary-col-noise summary-sortable" data-sort="noise">Noise Floor <i class="fas fa-sort ms-1"></i></th>
+                                <th class="summary-col summary-col-direct summary-sortable" data-sort="direct">Direct Sent <i class="fas fa-sort ms-1"></i></th>
+                                <th class="summary-col summary-col-uptime summary-sortable" data-sort="uptime">Uptime <i class="fas fa-sort ms-1"></i></th>
+                                <th class="summary-col summary-col-firmware summary-sortable" data-sort="firmware">Firmware <i class="fas fa-sort ms-1"></i></th>
+                                <th class="summary-col summary-col-build summary-sortable" data-sort="build">FW Build Date <i class="fas fa-sort ms-1"></i></th>
+                            </tr>
+                        </thead>
+                        <tbody id="summary-table-body">
+                            <tr>
+                                <td colspan="10" class="text-center">
+                                    <div class="loading">Loading summary...</div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="text-muted small">Select a target above to see recent samples in the chart.</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+class RepeaterHealthUI {
+    constructor() {
+        this.targets = [];
+        this.contacts = [];
+        this.chart = null;
+        this.summarySort = { column: 'latest', direction: 'desc' };
+        this.summaryColumnDefaults = {
+            latest: true,
+            battery: true,
+            rssi: true,
+            snr: true,
+            noise: true,
+            direct: true,
+            uptime: true,
+            firmware: true,
+            build: true
+        };
+        this.initialize();
+    }
+
+    async initialize() {
+        await this.loadContacts();
+        await this.loadTargets();
+        await this.loadPreferences();
+        this.setupHandlers();
+    }
+
+    setupHandlers() {
+        document.getElementById('add-public-key-btn').addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.addByPublicKey();
+        });
+        document.getElementById('add-contact-btn').addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.addFromContact();
+        });
+        document.getElementById('refresh-trend-btn').addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.loadTrend();
+        });
+        document.getElementById('trend-target-select').addEventListener('change', () => this.loadTrend());
+        document.getElementById('trend-metric-select').addEventListener('change', () => this.loadTrend());
+        document.getElementById('trend-days-input').addEventListener('change', () => this.loadTrend());
+        document.getElementById('save-preferences-btn').addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.savePreferences();
+        });
+        document.getElementById('run-now-btn').addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.runNow();
+        });
+        document.getElementById('summary-refresh-btn').addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.loadTargets();
+        });
+        document.querySelectorAll('.summary-col-toggle').forEach(el => {
+            el.addEventListener('change', () => this.updateSummaryColumns());
+        });
+        document.querySelectorAll('.summary-sortable').forEach(el => {
+            el.addEventListener('click', () => {
+                const column = el.getAttribute('data-sort');
+                if (!column) return;
+                if (this.summarySort.column === column) {
+                    this.summarySort.direction = this.summarySort.direction === 'asc' ? 'desc' : 'asc';
+                } else {
+                    this.summarySort.column = column;
+                    this.summarySort.direction = column === 'latest' ? 'desc' : 'asc';
+                }
+                this.sortSummaryTargets();
+                this.renderSummaryTable();
+                this.updateSummarySortIcons();
+            });
+        });
+    }
+
+    async loadContacts() {
+        try {
+            const response = await fetch('/api/repeater-health/contacts');
+            const data = await response.json();
+            this.contacts = data.contacts || [];
+            this.renderContactOptions();
+        } catch (error) {
+            console.error('Failed to load contacts', error);
+        }
+    }
+
+    async loadTargets() {
+        const tbody = document.getElementById('targets-table-body');
+        const summaryBody = document.getElementById('summary-table-body');
+        try {
+            const response = await fetch('/api/repeater-health/targets');
+            const data = await response.json();
+            this.targets = data.targets || [];
+            this.sortSummaryTargets();
+
+            tbody.innerHTML = '';
+            summaryBody.innerHTML = '';
+
+            if (this.targets.length === 0) {
+                tbody.innerHTML = '<tr><td colspan=\"4\" class=\"text-center text-muted\">No targets added yet.</td></tr>';
+                summaryBody.innerHTML = '<tr><td colspan=\"10\" class=\"text-center text-muted\">No targets yet.</td></tr>';
+            }
+
+            this.targets.forEach(target => {
+                tbody.appendChild(this.renderTargetRow(target));
+                summaryBody.appendChild(this.renderSummaryRow(target));
+            });
+
+            this.populateTrendTargets();
+            this.renderContactOptions();
+            this.applySummaryColumnPreferences();
+            this.updateSummarySortIcons();
+        } catch (error) {
+            tbody.innerHTML = '<tr><td colspan=\"4\" class=\"text-center text-danger\">Failed to load targets.</td></tr>';
+            summaryBody.innerHTML = '<tr><td colspan=\"10\" class=\"text-center text-danger\">Failed to load summary.</td></tr>';
+        }
+    }
+
+    renderContactOptions() {
+        const select = document.getElementById('contact-select');
+        if (!select) return;
+        const monitoredKeys = new Set(this.targets.map(t => t.public_key));
+        const availableContacts = this.contacts.filter(c => c.public_key && !monitoredKeys.has(c.public_key));
+        select.innerHTML = '<option value=\"\">Select repeater</option>';
+        availableContacts.forEach(contact => {
+            const option = document.createElement('option');
+            option.value = contact.public_key;
+            option.textContent = `${contact.name || 'Unknown'} (${(contact.public_key || '').slice(0, 10)}...)`;
+            select.appendChild(option);
+        });
+    }
+
+    async loadPreferences() {
+        try {
+            const response = await fetch('/api/repeater-health/preferences');
+            const data = await response.json();
+            const prefs = data.preferences || {};
+            document.getElementById('auto-refresh-toggle').checked = !!prefs.auto_refresh_enabled;
+            document.getElementById('auto-refresh-interval').value = prefs.auto_refresh_interval_minutes || 30;
+            const lastLabel = document.getElementById('last-auto-refresh');
+            if (prefs.last_auto_refresh_at) {
+                lastLabel.textContent = `Last refresh: ${moment.unix(prefs.last_auto_refresh_at).format('MM/DD/YYYY, h:mm:ss A')}`;
+            } else {
+                lastLabel.textContent = 'Last refresh: -';
+            }
+        } catch (error) {
+            console.error('Failed to load preferences', error);
+        }
+    }
+
+    renderTargetRow(target) {
+        const tr = document.createElement('tr');
+        const statusBadge = target.is_enabled ? 'success' : 'secondary';
+        const statusLabel = target.is_enabled ? 'Enabled' : 'Disabled';
+        const latestError = target.last_error ? `<div class=\"text-danger small\">${target.last_error}</div>` : '';
+
+        tr.innerHTML = `
+            <td>${target.name || 'Unknown'}</td>
+            <td><span class=\"text-muted\">${(target.public_key || '').slice(0, 12)}...</span>${latestError}</td>
+            <td><span class=\"badge bg-${statusBadge}\">${statusLabel}</span></td>
+            <td class=\"d-flex gap-1 flex-wrap\">
+                <button class=\"btn btn-sm btn-outline-success\" data-action=\"refresh\">Refresh</button>
+                <button class=\"btn btn-sm btn-outline-warning\" data-action=\"flush\">Flush</button>
+                <button class=\"btn btn-sm btn-outline-secondary\" data-action=\"toggle\">${target.is_enabled ? 'Disable' : 'Enable'}</button>
+                <button class=\"btn btn-sm btn-outline-danger\" data-action=\"remove\">Remove</button>
+            </td>
+        `;
+
+        tr.querySelector('[data-action=\"refresh\"]').addEventListener('click', () => this.refreshTarget(target.id));
+        tr.querySelector('[data-action=\"flush\"]').addEventListener('click', () => this.flushTarget(target.id));
+        tr.querySelector('[data-action=\"toggle\"]').addEventListener('click', () => this.toggleTarget(target));
+        tr.querySelector('[data-action=\"remove\"]').addEventListener('click', () => this.removeTarget(target.id));
+        return tr;
+    }
+
+    renderSummaryRow(target) {
+        const tr = document.createElement('tr');
+        const latest = target.latest_sample || {};
+        const sampleTime = latest.timestamp ? moment.unix(latest.timestamp).format('MM/DD/YYYY, h:mm:ss A') : '-';
+        const uptimeDisplay = latest.uptime ? this.formatUptime(latest.uptime) : '-';
+        tr.innerHTML = `
+            <td>${target.name || 'Unknown'}</td>
+            <td class="summary-col summary-col-latest">${sampleTime}</td>
+            <td class="summary-col summary-col-battery">${latest.battery_v ?? '-'}</td>
+            <td class="summary-col summary-col-rssi">${latest.last_rssi ?? '-'}</td>
+            <td class="summary-col summary-col-snr">${latest.last_snr ?? '-'}</td>
+            <td class="summary-col summary-col-noise">${latest.noise_floor ?? '-'}</td>
+            <td class="summary-col summary-col-direct">${latest.sent_direct ?? '-'}</td>
+            <td class="summary-col summary-col-uptime">${uptimeDisplay}</td>
+            <td class="summary-col summary-col-firmware">${latest.fw_version ?? '-'}</td>
+            <td class="summary-col summary-col-build">${latest.fw_build ?? '-'}</td>
+        `;
+        return tr;
+    }
+
+    renderSummaryTable() {
+        const summaryBody = document.getElementById('summary-table-body');
+        summaryBody.innerHTML = '';
+        if (this.targets.length === 0) {
+            summaryBody.innerHTML = '<tr><td colspan="10" class="text-center text-muted">No targets yet.</td></tr>';
+            return;
+        }
+        this.targets.forEach(target => {
+            summaryBody.appendChild(this.renderSummaryRow(target));
+        });
+        this.applySummaryColumnPreferences();
+    }
+
+    populateTrendTargets() {
+        const select = document.getElementById('trend-target-select');
+        const current = select.value;
+        select.innerHTML = '<option value="">Select a target</option>';
+        this.targets.forEach(target => {
+            const option = document.createElement('option');
+            option.value = target.id;
+            option.textContent = target.name || target.public_key;
+            select.appendChild(option);
+        });
+        if (current) {
+            select.value = current;
+        }
+    }
+
+    async addByPublicKey() {
+        const input = document.getElementById('public-key-input');
+        const publicKey = input.value.trim();
+        if (!publicKey) return;
+        await this.addTarget({ public_key: publicKey });
+        input.value = '';
+    }
+
+    async addFromContact() {
+        const select = document.getElementById('contact-select');
+        const publicKey = select.value;
+        if (!publicKey) return;
+        const contact = this.contacts.find(c => c.public_key === publicKey);
+        await this.addTarget({ public_key: publicKey, name: contact ? contact.name : undefined });
+    }
+
+    async addTarget(payload) {
+        try {
+            const response = await fetch('/api/repeater-health/targets', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await response.json();
+            if (data.error) {
+                this.setTargetsStatus(data.error, true);
+                return;
+            }
+            if (data.target && data.target.id) {
+                await this.refreshTarget(data.target.id, { silent: true });
+            } else {
+                await this.loadTargets();
+            }
+        } catch (error) {
+            this.setTargetsStatus('Failed to add target.', true);
+        }
+    }
+
+    async refreshTarget(targetId, options = {}) {
+        const { silent = false } = options;
+        try {
+            const response = await fetch(`/api/repeater-health/targets/${targetId}/refresh`, { method: 'POST' });
+            const data = await response.json();
+            if (data.error) {
+                if (!silent && data.error !== 'Getting data') {
+                    this.setTargetsStatus(data.error, true);
+                }
+                return;
+            }
+            await this.loadTargets();
+            this.loadTrend();
+        } catch (error) {
+            if (!silent) {
+                this.setTargetsStatus('Failed to refresh target.', true);
+            }
+        }
+    }
+
+    async refreshAll() {
+        try {
+            this.setTargetsStatus('Refreshing all targets...', false);
+            await fetch('/api/repeater-health/refresh-all', { method: 'POST' });
+            await this.loadTargets();
+            this.loadTrend();
+            this.loadPreferences();
+            this.setTargetsStatus('Refresh completed.', false);
+        } catch (error) {
+            this.setTargetsStatus('Failed to refresh all targets.', true);
+        }
+    }
+
+    async flushTarget(targetId) {
+        if (!confirm('Flush all samples for this target?')) return;
+        try {
+            await fetch(`/api/repeater-health/targets/${targetId}/flush`, { method: 'POST' });
+            await this.loadTargets();
+            this.loadTrend();
+        } catch (error) {
+            this.setTargetsStatus('Failed to flush target.', true);
+        }
+    }
+
+    async toggleTarget(target) {
+        try {
+            await fetch(`/api/repeater-health/targets/${target.id}/toggle`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled: !target.is_enabled })
+            });
+            await this.loadTargets();
+        } catch (error) {
+            this.setTargetsStatus('Failed to update target.', true);
+        }
+    }
+
+    async removeTarget(targetId) {
+        if (!confirm('Remove this target?')) return;
+        try {
+            await fetch(`/api/repeater-health/targets/${targetId}`, { method: 'DELETE' });
+            await this.loadTargets();
+        } catch (error) {
+            this.setTargetsStatus('Failed to remove target.', true);
+        }
+    }
+
+    async loadTrend() {
+        const targetId = document.getElementById('trend-target-select').value;
+        if (!targetId) {
+            this.renderChart([], '');
+            return;
+        }
+        const metric = document.getElementById('trend-metric-select').value;
+        if (!metric) {
+            this.renderChart([], '');
+            return;
+        }
+        const days = document.getElementById('trend-days-input').value;
+        try {
+            const response = await fetch(`/api/repeater-health/trends?target_id=${targetId}&metric=${metric}&days=${days}`);
+            const data = await response.json();
+            if (data.error) {
+                console.error(data.error);
+                return;
+            }
+            this.renderChart(data.data || [], metric);
+        } catch (error) {
+            console.error('Failed to load trend', error);
+        }
+    }
+
+    async savePreferences() {
+        const enabled = document.getElementById('auto-refresh-toggle').checked;
+        const interval = parseInt(document.getElementById('auto-refresh-interval').value || '30', 10);
+        const status = document.getElementById('preferences-status');
+        status.textContent = 'Saving...';
+        try {
+            const response = await fetch('/api/repeater-health/preferences', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    auto_refresh_enabled: enabled,
+                    auto_refresh_interval_minutes: interval
+                })
+            });
+            const data = await response.json();
+            if (data.error) {
+                status.textContent = data.error;
+                status.classList.add('text-danger');
+                return;
+            }
+            status.textContent = 'Saved.';
+            status.classList.remove('text-danger');
+            status.classList.add('text-success');
+            setTimeout(() => { status.textContent = ''; status.classList.remove('text-success'); }, 3000);
+            await this.loadPreferences();
+        } catch (error) {
+            status.textContent = 'Save failed.';
+            status.classList.add('text-danger');
+        }
+    }
+
+    async runNow() {
+        const status = document.getElementById('preferences-status');
+        status.textContent = 'Running...';
+        status.classList.remove('text-danger');
+        try {
+            await this.refreshAll();
+            status.textContent = 'Run completed.';
+            status.classList.add('text-success');
+            setTimeout(() => { status.textContent = ''; status.classList.remove('text-success'); }, 3000);
+        } catch (error) {
+            status.textContent = 'Run failed.';
+            status.classList.add('text-danger');
+        }
+    }
+
+    setTargetsStatus(message, isError) {
+        const status = document.getElementById('targets-status');
+        if (!status) return;
+        status.textContent = message || '';
+        status.classList.toggle('text-danger', !!isError);
+        status.classList.toggle('text-success', !isError && !!message);
+        if (message && !isError) {
+            setTimeout(() => {
+                if (status.textContent === message) {
+                    status.textContent = '';
+                    status.classList.remove('text-success');
+                }
+            }, 4000);
+        }
+    }
+
+    renderChart(points, metric) {
+        const labels = points.map(p => moment.unix(p.timestamp).format('MM/DD HH:mm'));
+        const values = points.map(p => p.value);
+        const ctx = document.getElementById('healthTrendChart').getContext('2d');
+
+        if (this.chart) {
+            this.chart.destroy();
+        }
+
+        this.chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [{
+                    label: metric ? metric.replace('_', ' ').toUpperCase() : 'Select a metric',
+                    data: values,
+                    borderColor: '#1c6cff',
+                    backgroundColor: 'rgba(28, 108, 255, 0.18)',
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: true } },
+                scales: {
+                    x: { ticks: { autoSkip: true, maxTicksLimit: 8 } },
+                    y: { beginAtZero: false }
+                }
+            }
+        });
+    }
+
+
+    formatUptime(seconds) {
+        const total = parseInt(seconds, 10);
+        if (isNaN(total)) return '-';
+        const days = Math.floor(total / 86400);
+        const hours = Math.floor((total % 86400) / 3600);
+        const minutes = Math.floor((total % 3600) / 60);
+        const secs = total % 60;
+        const parts = [];
+        if (days > 0) parts.push(`${days}d`);
+        parts.push(`${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`);
+        return parts.join(' ');
+    }
+
+    applySummaryColumnPreferences() {
+        const saved = localStorage.getItem('repeaterHealthSummaryColumns');
+        const prefs = saved ? JSON.parse(saved) : this.summaryColumnDefaults;
+        document.querySelectorAll('.summary-col-toggle').forEach(input => {
+            const key = input.getAttribute('data-col');
+            if (prefs[key] !== undefined) {
+                input.checked = !!prefs[key];
+            }
+        });
+        this.updateSummaryColumns(false);
+    }
+
+    updateSummaryColumns(save = true) {
+        const prefs = {};
+        document.querySelectorAll('.summary-col-toggle').forEach(input => {
+            const key = input.getAttribute('data-col');
+            prefs[key] = input.checked;
+            const cells = document.querySelectorAll(`.summary-col-${key}`);
+            cells.forEach(cell => {
+                cell.style.display = input.checked ? '' : 'none';
+            });
+        });
+        if (save) {
+            localStorage.setItem('repeaterHealthSummaryColumns', JSON.stringify(prefs));
+        }
+    }
+
+    sortSummaryTargets() {
+        const { column, direction } = this.summarySort;
+        const factor = direction === 'asc' ? 1 : -1;
+        const getValue = (target) => {
+            const latest = target.latest_sample || {};
+            switch (column) {
+                case 'name':
+                    return (target.name || '').toLowerCase();
+                case 'latest':
+                    return latest.timestamp || 0;
+                case 'battery':
+                    return latest.battery_v ?? -Infinity;
+                case 'rssi':
+                    return latest.last_rssi ?? -Infinity;
+                case 'snr':
+                    return latest.last_snr ?? -Infinity;
+                case 'noise':
+                    return latest.noise_floor ?? -Infinity;
+                case 'direct':
+                    return latest.sent_direct ?? -Infinity;
+                case 'uptime':
+                    return latest.uptime ?? -Infinity;
+                case 'firmware':
+                    return (latest.fw_version || '').toLowerCase();
+                case 'build':
+                    return (latest.fw_build || '').toLowerCase();
+                default:
+                    return 0;
+            }
+        };
+        this.targets.sort((a, b) => {
+            const va = getValue(a);
+            const vb = getValue(b);
+            if (va === vb) return 0;
+            if (va > vb) return factor;
+            return -factor;
+        });
+    }
+
+    updateSummarySortIcons() {
+        const columns = document.querySelectorAll('.summary-sortable');
+        columns.forEach(col => {
+            const icon = col.querySelector('i');
+            const column = col.getAttribute('data-sort');
+            if (!icon) return;
+            if (column === this.summarySort.column) {
+                col.classList.add('sort-active');
+                icon.className = this.summarySort.direction === 'asc'
+                    ? 'fas fa-sort-up ms-1'
+                    : 'fas fa-sort-down ms-1';
+            } else {
+                col.classList.remove('sort-active');
+                icon.className = 'fas fa-sort ms-1';
+            }
+        });
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => new RepeaterHealthUI());
+</script>
+{% endblock %}

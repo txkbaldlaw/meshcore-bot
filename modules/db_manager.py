@@ -175,6 +175,20 @@ class DBManager:
                         result_data TEXT
                     )
                 ''')
+
+                # Create repeater_health_operations queue table for web viewer -> bot health queries
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS repeater_health_operations (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        target_id INTEGER NOT NULL,
+                        public_key TEXT NOT NULL,
+                        status TEXT DEFAULT 'pending',
+                        error_message TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        processed_at TIMESTAMP,
+                        status_json TEXT
+                    )
+                ''')
                 
                 # Create feed_message_queue table for queuing feed messages
                 cursor.execute('''
@@ -208,6 +222,7 @@ class DBManager:
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_feed_errors_resolved ON feed_errors(resolved_at)')
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_channels_name ON channels(channel_name)')
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_channel_ops_status ON channel_operations(status, created_at)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_repeater_health_ops_status ON repeater_health_operations(status, created_at)')
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_feed_message_queue_feed_id ON feed_message_queue(feed_id)')
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_feed_message_queue_sent ON feed_message_queue(sent_at)')
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_feed_message_queue_priority ON feed_message_queue(priority DESC, queued_at ASC)')

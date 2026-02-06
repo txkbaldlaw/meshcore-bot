@@ -403,6 +403,32 @@ class MessageScheduler:
                         
                         loop.run_until_complete(self._process_channel_operations())
                     self.last_channel_ops_check_time = time.time()
+
+            # Process repeater health operations from web viewer (every 5 seconds)
+            if not hasattr(self, 'last_repeater_health_ops_check_time'):
+                self.last_repeater_health_ops_check_time = 0
+
+            if time.time() - self.last_repeater_health_ops_check_time >= 5:
+                if (hasattr(self.bot, 'meshcore') and self.bot.meshcore and
+                    hasattr(self.bot, 'connected') and self.bot.connected):
+                    import asyncio
+                    if hasattr(self.bot, 'main_event_loop') and self.bot.main_event_loop and self.bot.main_event_loop.is_running():
+                        future = asyncio.run_coroutine_threadsafe(
+                            self._process_repeater_health_operations(),
+                            self.bot.main_event_loop
+                        )
+                        try:
+                            future.result(timeout=30)
+                        except Exception as e:
+                            self.logger.error(f"Error processing repeater health operations: {e}")
+                    else:
+                        try:
+                            loop = asyncio.get_event_loop()
+                        except RuntimeError:
+                            loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(loop)
+                        loop.run_until_complete(self._process_repeater_health_operations())
+                    self.last_repeater_health_ops_check_time = time.time()
             
             # Process feed message queue (every 2 seconds)
             if not hasattr(self, 'last_message_queue_check_time'):
@@ -619,3 +645,70 @@ class MessageScheduler:
                     self.logger.error(f"Parent directory: {parent} (exists: {parent.exists()}, writable: {os.access(str(parent), os.W_OK) if parent.exists() else False})")
             else:
                 self.logger.error(f"Database path: {db_path_str}")
+
+    async def _process_repeater_health_operations(self):
+        """Process pending repeater health operations from the web viewer."""
+        try:
+            db_path = str(self.bot.db_manager.db_path)
+
+            with sqlite3.connect(db_path, timeout=30.0) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT id, target_id, public_key
+                    FROM repeater_health_operations
+                    WHERE status = 'pending'
+                    ORDER BY created_at ASC
+                    LIMIT 5
+                ''')
+                operations = cursor.fetchall()
+
+            if not operations:
+                return
+
+            for op in operations:
+                op_id = op['id']
+                target_id = op['target_id']
+                public_key = op['public_key']
+
+                try:
+                    contact = None
+                    contacts = getattr(self.bot.meshcore, 'contacts', {})
+                    if isinstance(contacts, dict):
+                        for contact_entry in contacts.values():
+                            if isinstance(contact_entry, dict) and contact_entry.get('public_key') == public_key:
+                                contact = contact_entry
+                                break
+
+                    if contact is None:
+                        raise ValueError('Contact not found in device list')
+
+                    status = await self.bot.meshcore.commands.req_status_sync(contact, timeout=0)
+                    if not status:
+                        raise ValueError('Getting data')
+
+                    with sqlite3.connect(db_path, timeout=30.0) as conn:
+                        cursor = conn.cursor()
+                        cursor.execute('''
+                            UPDATE repeater_health_operations
+                            SET status = 'completed',
+                                processed_at = CURRENT_TIMESTAMP,
+                                status_json = ?
+                            WHERE id = ?
+                        ''', (json.dumps(status), op_id))
+                        conn.commit()
+
+                except Exception as e:
+                    with sqlite3.connect(db_path, timeout=30.0) as conn:
+                        cursor = conn.cursor()
+                        cursor.execute('''
+                            UPDATE repeater_health_operations
+                            SET status = 'failed',
+                                processed_at = CURRENT_TIMESTAMP,
+                                error_message = ?
+                            WHERE id = ?
+                        ''', (str(e), op_id))
+                        conn.commit()
+
+        except Exception as e:
+            self.logger.error(f"Error in _process_repeater_health_operations: {e}")

@@ -9,6 +9,7 @@ A web-based interface for viewing and analyzing data from your MeshCore Bot.
 - **Contact Tracking**: Complete history of all heard contacts with signal strength and routing data
 - **Cache Data**: View cached geocoding and API responses
 - **Purging Log**: Audit trail of contact purging operations
+- **Repeater Health**: Monitor selected repeaters with status snapshots and trends
 - **Real-time Updates**: Auto-refreshes every 30 seconds
 - **API Endpoints**: JSON API for programmatic access
 
@@ -97,6 +98,12 @@ Once started, open your web browser and navigate to:
 - Generic cache entries (weather, sports, etc.)
 - Expiration status
 - Cache value previews
+
+### Repeater Health
+- Track selected repeaters over time
+- Add targets by public key or from contacts
+- Status metrics (battery, RSSI, SNR, uptime, firmware)
+- Optional auto-refresh scheduler (configurable in Repeater Health Preferences)
 
 ### Purging Log
 - Audit trail of contact purging operations
