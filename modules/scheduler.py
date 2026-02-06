@@ -9,6 +9,7 @@ import threading
 import schedule
 import datetime
 import pytz
+import asyncio
 import sqlite3
 import json
 import os
@@ -458,6 +459,31 @@ class MessageScheduler:
                         
                         loop.run_until_complete(self.bot.feed_manager.process_message_queue())
                     self.last_message_queue_check_time = time.time()
+
+            # Process web viewer operations (every 5 seconds)
+            if not hasattr(self, 'last_web_viewer_ops_check_time'):
+                self.last_web_viewer_ops_check_time = 0
+
+            if time.time() - self.last_web_viewer_ops_check_time >= 5:
+                if hasattr(self.bot, 'web_viewer_integration') and self.bot.web_viewer_integration:
+                    import asyncio
+                    if hasattr(self.bot, 'main_event_loop') and self.bot.main_event_loop and self.bot.main_event_loop.is_running():
+                        future = asyncio.run_coroutine_threadsafe(
+                            self._process_web_viewer_operations(),
+                            self.bot.main_event_loop
+                        )
+                        try:
+                            future.result(timeout=30)
+                        except Exception as e:
+                            self.logger.error(f"Error processing web viewer operations: {e}")
+                    else:
+                        try:
+                            loop = asyncio.get_event_loop()
+                        except RuntimeError:
+                            loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(loop)
+                        loop.run_until_complete(self._process_web_viewer_operations())
+                    self.last_web_viewer_ops_check_time = time.time()
             
             schedule.run_pending()
             time.sleep(1)
@@ -650,6 +676,9 @@ class MessageScheduler:
         """Process pending repeater health operations from the web viewer."""
         try:
             db_path = str(self.bot.db_manager.db_path)
+            from .utils import resolve_path
+            rep_db_path = self.bot.config.get('Repeater_Health', 'db_path', fallback='data/databases/repeater_health.db')
+            rep_db_path = resolve_path(rep_db_path, self.bot.bot_root)
 
             with sqlite3.connect(db_path, timeout=30.0) as conn:
                 conn.row_factory = sqlite3.Row
@@ -683,9 +712,34 @@ class MessageScheduler:
                     if contact is None:
                         raise ValueError('Contact not found in device list')
 
+                    password = None
+                    try:
+                        with sqlite3.connect(rep_db_path, timeout=30.0) as rep_conn:
+                            rep_conn.row_factory = sqlite3.Row
+                            rep_cursor = rep_conn.cursor()
+                            rep_cursor.execute('SELECT password FROM repeater_health_credentials WHERE public_key = ?', (public_key,))
+                            row = rep_cursor.fetchone()
+                            if row:
+                                password = row['password']
+                    except Exception as e:
+                        self.logger.debug(f"Repeater health password lookup failed: {e}")
+
+                    if password:
+                        try:
+                            await self.bot.meshcore.commands.send_login(contact['public_key'], password)
+                            await asyncio.sleep(1.0)
+                        except Exception as e:
+                            self.logger.warning(f"Repeater login failed: {e}")
+
                     status = await self.bot.meshcore.commands.req_status_sync(contact, timeout=0)
                     if not status:
                         raise ValueError('Getting data')
+
+                    if password:
+                        try:
+                            await self.bot.meshcore.commands.send_logout(contact['public_key'])
+                        except Exception as e:
+                            self.logger.debug(f"Repeater logout failed: {e}")
 
                     with sqlite3.connect(db_path, timeout=30.0) as conn:
                         cursor = conn.cursor()
@@ -712,3 +766,60 @@ class MessageScheduler:
 
         except Exception as e:
             self.logger.error(f"Error in _process_repeater_health_operations: {e}")
+
+    async def _process_web_viewer_operations(self):
+        """Process pending web viewer operations from the web viewer UI."""
+        try:
+            db_path = str(self.bot.db_manager.db_path)
+
+            with sqlite3.connect(db_path, timeout=30.0) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT id, operation_type
+                    FROM web_viewer_operations
+                    WHERE status = 'pending'
+                    ORDER BY created_at ASC
+                    LIMIT 5
+                ''')
+                operations = cursor.fetchall()
+
+            if not operations:
+                return
+
+            for op in operations:
+                op_id = op['id']
+                op_type = op['operation_type']
+                try:
+                    if op_type == 'restart':
+                        self.logger.info("Restarting web viewer via queued operation")
+                        self.bot.web_viewer_integration.stop_viewer()
+                        await asyncio.sleep(1.0)
+                        self.bot.web_viewer_integration.start_viewer()
+                    else:
+                        raise ValueError(f"Unknown web viewer operation: {op_type}")
+
+                    with sqlite3.connect(db_path, timeout=30.0) as conn:
+                        cursor = conn.cursor()
+                        cursor.execute('''
+                            UPDATE web_viewer_operations
+                            SET status = 'completed',
+                                processed_at = CURRENT_TIMESTAMP
+                            WHERE id = ?
+                        ''', (op_id,))
+                        conn.commit()
+
+                except Exception as e:
+                    with sqlite3.connect(db_path, timeout=30.0) as conn:
+                        cursor = conn.cursor()
+                        cursor.execute('''
+                            UPDATE web_viewer_operations
+                            SET status = 'failed',
+                                processed_at = CURRENT_TIMESTAMP,
+                                error_message = ?
+                            WHERE id = ?
+                        ''', (str(e), op_id))
+                        conn.commit()
+
+        except Exception as e:
+            self.logger.error(f"Error in _process_web_viewer_operations: {e}")

@@ -118,6 +118,13 @@ class RepeaterHealthManager:
                 )
             ''')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_repeater_samples_target_time ON repeater_health_samples(target_id, timestamp)')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS repeater_health_credentials (
+                    public_key TEXT PRIMARY KEY,
+                    password TEXT NOT NULL,
+                    updated_at REAL
+                )
+            ''')
             conn.commit()
 
     def _init_preferences(self) -> None:
@@ -213,7 +220,9 @@ class RepeaterHealthManager:
         query = '''
             SELECT t.id, t.public_key, t.name, t.added_at, t.last_refresh_at, t.last_error, t.is_enabled,
                    s.timestamp, s.battery_v, s.last_rssi, s.last_snr, s.noise_floor,
-                   s.sent_direct, s.uptime, s.fw_version, s.fw_build
+                   s.sent_direct, s.uptime, s.fw_version, s.fw_build,
+                   s.tx_queue_len, s.nb_recv, s.nb_sent, s.airtime, s.sent_flood,
+                   s.recv_flood, s.recv_direct, s.full_evts, s.direct_dups, s.flood_dups, s.rx_airtime
             FROM repeater_targets t
             LEFT JOIN repeater_health_samples s
               ON s.id = (
@@ -244,6 +253,17 @@ class RepeaterHealthManager:
                     'uptime': row['uptime'],
                     'fw_version': row['fw_version'],
                     'fw_build': row['fw_build'],
+                    'tx_queue_len': row['tx_queue_len'],
+                    'nb_recv': row['nb_recv'],
+                    'nb_sent': row['nb_sent'],
+                    'airtime': row['airtime'],
+                    'sent_flood': row['sent_flood'],
+                    'recv_flood': row['recv_flood'],
+                    'recv_direct': row['recv_direct'],
+                    'full_evts': row['full_evts'],
+                    'direct_dups': row['direct_dups'],
+                    'flood_dups': row['flood_dups'],
+                    'rx_airtime': row['rx_airtime'],
                 }
             targets.append({
                 'id': row['id'],
@@ -350,6 +370,33 @@ class RepeaterHealthManager:
         repeaters.sort(key=lambda x: (x.get('name') or ''))
         return repeaters
 
+    def set_password(self, public_key: str, password: Optional[str]) -> None:
+        public_key = (public_key or '').strip().lower()
+        if not public_key:
+            raise ValueError('Public key is required')
+        with self._db_lock, sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            if password:
+                cursor.execute('''
+                    INSERT INTO repeater_health_credentials (public_key, password, updated_at)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(public_key) DO UPDATE SET password = excluded.password, updated_at = excluded.updated_at
+                ''', (public_key, password, time.time()))
+            else:
+                cursor.execute('DELETE FROM repeater_health_credentials WHERE public_key = ?', (public_key,))
+            conn.commit()
+
+    def get_password(self, public_key: str) -> Optional[str]:
+        public_key = (public_key or '').strip().lower()
+        if not public_key:
+            return None
+        with self._db_lock, sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute('SELECT password FROM repeater_health_credentials WHERE public_key = ?', (public_key,))
+            row = cursor.fetchone()
+        return row['password'] if row else None
+
     def refresh_target(self, target_id: int) -> Dict[str, Any]:
         target = self._get_target_by_id(target_id)
         if not target:
@@ -450,7 +497,8 @@ class RepeaterHealthManager:
     def get_samples(self, target_id: int, limit: int = 50) -> List[Dict[str, Any]]:
         query = '''
             SELECT timestamp, battery_v, last_rssi, last_snr, noise_floor, sent_direct, uptime,
-                   fw_version, fw_build
+                   fw_version, fw_build, tx_queue_len, nb_recv, nb_sent, airtime, sent_flood,
+                   recv_flood, recv_direct, full_evts, direct_dups, flood_dups, rx_airtime
             FROM repeater_health_samples
             WHERE target_id = ?
             ORDER BY timestamp DESC

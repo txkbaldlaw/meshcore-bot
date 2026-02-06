@@ -189,6 +189,18 @@ class DBManager:
                         status_json TEXT
                     )
                 ''')
+
+                # Create web_viewer_operations queue table for viewer control actions
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS web_viewer_operations (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        operation_type TEXT NOT NULL,
+                        status TEXT DEFAULT 'pending',
+                        error_message TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        processed_at TIMESTAMP
+                    )
+                ''')
                 
                 # Create feed_message_queue table for queuing feed messages
                 cursor.execute('''
@@ -223,6 +235,7 @@ class DBManager:
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_channels_name ON channels(channel_name)')
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_channel_ops_status ON channel_operations(status, created_at)')
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_repeater_health_ops_status ON repeater_health_operations(status, created_at)')
+                cursor.execute('CREATE INDEX IF NOT EXISTS idx_web_viewer_ops_status ON web_viewer_operations(status, created_at)')
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_feed_message_queue_feed_id ON feed_message_queue(feed_id)')
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_feed_message_queue_sent ON feed_message_queue(sent_at)')
                 cursor.execute('CREATE INDEX IF NOT EXISTS idx_feed_message_queue_priority ON feed_message_queue(priority DESC, queued_at ASC)')

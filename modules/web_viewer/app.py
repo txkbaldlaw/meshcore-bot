@@ -437,6 +437,38 @@ class BotDataViewer:
                 self.logger.error(f"Error toggling repeater health target: {e}")
                 return jsonify({'error': str(e)}), 500
 
+        @self.app.route('/api/repeater-health/credentials', methods=['POST'])
+        def api_repeater_health_credentials():
+            """Set or clear repeater password"""
+            if not self.repeater_health_manager:
+                return jsonify({'error': 'Repeater health manager not available'}), 500
+            try:
+                data = request.get_json(force=True)
+                public_key = data.get('public_key')
+                password = data.get('password')
+                self.repeater_health_manager.set_password(public_key, password)
+                return jsonify({'status': 'ok'})
+            except Exception as e:
+                self.logger.error(f"Error setting repeater health password: {e}")
+                return jsonify({'error': str(e)}), 500
+
+        @self.app.route('/api/web-viewer/restart', methods=['POST'])
+        def api_web_viewer_restart():
+            """Queue a web viewer restart via bot"""
+            try:
+                db_path = self.db_path
+                with sqlite3.connect(db_path, timeout=30.0) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute('''
+                        INSERT INTO web_viewer_operations (operation_type)
+                        VALUES ('restart')
+                    ''')
+                    conn.commit()
+                return jsonify({'status': 'queued'})
+            except Exception as e:
+                self.logger.error(f"Error queueing web viewer restart: {e}")
+                return jsonify({'error': str(e)}), 500
+
         @self.app.route('/api/repeater-health/preferences', methods=['GET', 'POST'])
         def api_repeater_health_preferences():
             """Get or update repeater health preferences"""

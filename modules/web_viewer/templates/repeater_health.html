@@ -135,6 +135,9 @@
                         <div class="col-md-2 d-grid">
                             <button class="btn btn-outline-secondary" id="run-now-btn" type="button">Run Now</button>
                         </div>
+                        <div class="col-md-2 d-grid">
+                            <button class="btn btn-outline-danger" id="restart-viewer-btn" type="button">Restart Viewer</button>
+                        </div>
                         <div class="col-md-12 text-muted small d-flex gap-3">
                             <span id="preferences-status"></span>
                             <span id="last-auto-refresh"></span>
@@ -190,12 +193,48 @@
                                 <label class="form-check-label" for="col-uptime">Uptime</label>
                             </div>
                             <div class="form-check">
-                                <input class="form-check-input summary-col-toggle" type="checkbox" data-col="firmware" id="col-firmware" checked>
-                                <label class="form-check-label" for="col-firmware">Firmware</label>
+                                <input class="form-check-input summary-col-toggle" type="checkbox" data-col="txqueue" id="col-txqueue" checked>
+                                <label class="form-check-label" for="col-txqueue">TX Queue</label>
                             </div>
                             <div class="form-check">
-                                <input class="form-check-input summary-col-toggle" type="checkbox" data-col="build" id="col-build" checked>
-                                <label class="form-check-label" for="col-build">FW Build Date</label>
+                                <input class="form-check-input summary-col-toggle" type="checkbox" data-col="recv" id="col-recv" checked>
+                                <label class="form-check-label" for="col-recv">RX Count</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input summary-col-toggle" type="checkbox" data-col="sent" id="col-sent" checked>
+                                <label class="form-check-label" for="col-sent">TX Count</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input summary-col-toggle" type="checkbox" data-col="airtime" id="col-airtime" checked>
+                                <label class="form-check-label" for="col-airtime">TX Air</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input summary-col-toggle" type="checkbox" data-col="sentflood" id="col-sentflood" checked>
+                                <label class="form-check-label" for="col-sentflood">Flood TX</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input summary-col-toggle" type="checkbox" data-col="recvflood" id="col-recvflood" checked>
+                                <label class="form-check-label" for="col-recvflood">Flood RX</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input summary-col-toggle" type="checkbox" data-col="recvdirect" id="col-recvdirect" checked>
+                                <label class="form-check-label" for="col-recvdirect">Direct RX</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input summary-col-toggle" type="checkbox" data-col="fullevts" id="col-fullevts" checked>
+                                <label class="form-check-label" for="col-fullevts">Full Events</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input summary-col-toggle" type="checkbox" data-col="directdups" id="col-directdups" checked>
+                                <label class="form-check-label" for="col-directdups">Direct Dups</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input summary-col-toggle" type="checkbox" data-col="flooddups" id="col-flooddups" checked>
+                                <label class="form-check-label" for="col-flooddups">Flood Dups</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input summary-col-toggle" type="checkbox" data-col="rxair" id="col-rxair" checked>
+                                <label class="form-check-label" for="col-rxair">RX Air</label>
                             </div>
                             </div>
                         </div>
@@ -207,21 +246,30 @@
                     <table class="table table-sm table-striped table-hover align-middle">
                         <thead class="table-dark">
                             <tr>
-                                <th class="summary-sortable" data-sort="name">Repeater <i class="fas fa-sort ms-1"></i></th>
-                                <th class="summary-col summary-col-latest summary-sortable sort-active" data-sort="latest">Latest Sample <i class="fas fa-sort-down ms-1"></i></th>
-                                <th class="summary-col summary-col-battery summary-sortable" data-sort="battery">Battery (V) <i class="fas fa-sort ms-1"></i></th>
-                                <th class="summary-col summary-col-rssi summary-sortable" data-sort="rssi">Last RSSI <i class="fas fa-sort ms-1"></i></th>
-                                <th class="summary-col summary-col-snr summary-sortable" data-sort="snr">Last SNR <i class="fas fa-sort ms-1"></i></th>
-                                <th class="summary-col summary-col-noise summary-sortable" data-sort="noise">Noise Floor <i class="fas fa-sort ms-1"></i></th>
-                                <th class="summary-col summary-col-direct summary-sortable" data-sort="direct">Direct Sent <i class="fas fa-sort ms-1"></i></th>
-                                <th class="summary-col summary-col-uptime summary-sortable" data-sort="uptime">Uptime <i class="fas fa-sort ms-1"></i></th>
-                                <th class="summary-col summary-col-firmware summary-sortable" data-sort="firmware">Firmware <i class="fas fa-sort ms-1"></i></th>
-                                <th class="summary-col summary-col-build summary-sortable" data-sort="build">FW Build Date <i class="fas fa-sort ms-1"></i></th>
+                                <th class="summary-sortable" data-sort="name" data-col="name">Repeater <i class="fas fa-sort ms-1"></i></th>
+                                <th class="summary-col summary-col-latest summary-sortable sort-active" data-sort="latest" data-col="latest">Latest Sample <i class="fas fa-sort-down ms-1"></i></th>
+                                <th class="summary-col summary-col-battery summary-sortable" data-sort="battery" data-col="battery">Battery (V) <i class="fas fa-sort ms-1"></i></th>
+                                <th class="summary-col summary-col-rssi summary-sortable" data-sort="rssi" data-col="rssi">Last RSSI <i class="fas fa-sort ms-1"></i></th>
+                                <th class="summary-col summary-col-snr summary-sortable" data-sort="snr" data-col="snr">Last SNR <i class="fas fa-sort ms-1"></i></th>
+                                <th class="summary-col summary-col-noise summary-sortable" data-sort="noise" data-col="noise">Noise Floor <i class="fas fa-sort ms-1"></i></th>
+                                <th class="summary-col summary-col-direct summary-sortable" data-sort="direct" data-col="direct">Direct Sent <i class="fas fa-sort ms-1"></i></th>
+                                <th class="summary-col summary-col-uptime summary-sortable" data-sort="uptime" data-col="uptime">Uptime <i class="fas fa-sort ms-1"></i></th>
+                                <th class="summary-col summary-col-txqueue summary-sortable" data-sort="txqueue" data-col="txqueue">TX Queue <i class="fas fa-sort ms-1"></i></th>
+                                <th class="summary-col summary-col-recv summary-sortable" data-sort="recv" data-col="recv">RX Count <i class="fas fa-sort ms-1"></i></th>
+                                <th class="summary-col summary-col-sent summary-sortable" data-sort="sent" data-col="sent">TX Count <i class="fas fa-sort ms-1"></i></th>
+                                <th class="summary-col summary-col-airtime summary-sortable" data-sort="airtime" data-col="airtime">TX Air <i class="fas fa-sort ms-1"></i></th>
+                                <th class="summary-col summary-col-sentflood summary-sortable" data-sort="sentflood" data-col="sentflood">Flood TX <i class="fas fa-sort ms-1"></i></th>
+                                <th class="summary-col summary-col-recvflood summary-sortable" data-sort="recvflood" data-col="recvflood">Flood RX <i class="fas fa-sort ms-1"></i></th>
+                                <th class="summary-col summary-col-recvdirect summary-sortable" data-sort="recvdirect" data-col="recvdirect">Direct RX <i class="fas fa-sort ms-1"></i></th>
+                                <th class="summary-col summary-col-fullevts summary-sortable" data-sort="fullevts" data-col="fullevts">Full Events <i class="fas fa-sort ms-1"></i></th>
+                                <th class="summary-col summary-col-directdups summary-sortable" data-sort="directdups" data-col="directdups">Direct Dups <i class="fas fa-sort ms-1"></i></th>
+                                <th class="summary-col summary-col-flooddups summary-sortable" data-sort="flooddups" data-col="flooddups">Flood Dups <i class="fas fa-sort ms-1"></i></th>
+                                <th class="summary-col summary-col-rxair summary-sortable" data-sort="rxair" data-col="rxair">RX Air <i class="fas fa-sort ms-1"></i></th>
                             </tr>
                         </thead>
                         <tbody id="summary-table-body">
                             <tr>
-                                <td colspan="10" class="text-center">
+                                <td colspan="20" class="text-center">
                                     <div class="loading">Loading summary...</div>
                                 </td>
                             </tr>
@@ -251,8 +299,17 @@ class RepeaterHealthUI {
             noise: true,
             direct: true,
             uptime: true,
-            firmware: true,
-            build: true
+            txqueue: true,
+            recv: true,
+            sent: true,
+            airtime: true,
+            sentflood: true,
+            recvflood: true,
+            recvdirect: true,
+            fullevts: true,
+            directdups: true,
+            flooddups: true,
+            rxair: true
         };
         this.initialize();
     }
@@ -292,6 +349,11 @@ class RepeaterHealthUI {
             e.preventDefault();
             e.stopPropagation();
             this.runNow();
+        });
+        document.getElementById('restart-viewer-btn').addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.restartViewer();
         });
         document.getElementById('summary-refresh-btn').addEventListener('click', (e) => {
             e.preventDefault();
@@ -414,6 +476,7 @@ class RepeaterHealthUI {
             <td class=\"d-flex gap-1 flex-wrap\">
                 <button class=\"btn btn-sm btn-outline-success\" data-action=\"refresh\">Refresh</button>
                 <button class=\"btn btn-sm btn-outline-warning\" data-action=\"flush\">Flush</button>
+                <button class=\"btn btn-sm btn-outline-secondary\" data-action=\"password\">Password</button>
                 <button class=\"btn btn-sm btn-outline-secondary\" data-action=\"toggle\">${target.is_enabled ? 'Disable' : 'Enable'}</button>
                 <button class=\"btn btn-sm btn-outline-danger\" data-action=\"remove\">Remove</button>
             </td>
@@ -421,6 +484,7 @@ class RepeaterHealthUI {
 
         tr.querySelector('[data-action=\"refresh\"]').addEventListener('click', () => this.refreshTarget(target.id));
         tr.querySelector('[data-action=\"flush\"]').addEventListener('click', () => this.flushTarget(target.id));
+        tr.querySelector('[data-action=\"password\"]').addEventListener('click', () => this.setPassword(target));
         tr.querySelector('[data-action=\"toggle\"]').addEventListener('click', () => this.toggleTarget(target));
         tr.querySelector('[data-action=\"remove\"]').addEventListener('click', () => this.removeTarget(target.id));
         return tr;
@@ -433,7 +497,7 @@ class RepeaterHealthUI {
         const uptimeDisplay = latest.uptime ? this.formatUptime(latest.uptime) : '-';
         tr.dataset.targetId = target.id;
         tr.innerHTML = `
-            <td>
+            <td class="summary-col summary-col-name">
                 <button class="btn btn-sm btn-link text-decoration-none summary-expand" data-target-id="${target.id}">
                     <i class="fas fa-caret-right"></i>
                 </button>
@@ -446,8 +510,17 @@ class RepeaterHealthUI {
             <td class="summary-col summary-col-noise">${latest.noise_floor ?? '-'}</td>
             <td class="summary-col summary-col-direct">${latest.sent_direct ?? '-'}</td>
             <td class="summary-col summary-col-uptime">${uptimeDisplay}</td>
-            <td class="summary-col summary-col-firmware">${latest.fw_version ?? '-'}</td>
-            <td class="summary-col summary-col-build">${latest.fw_build ?? '-'}</td>
+            <td class="summary-col summary-col-txqueue">${latest.tx_queue_len ?? '-'}</td>
+            <td class="summary-col summary-col-recv">${latest.nb_recv ?? '-'}</td>
+            <td class="summary-col summary-col-sent">${latest.nb_sent ?? '-'}</td>
+            <td class="summary-col summary-col-airtime">${latest.airtime ?? '-'}</td>
+            <td class="summary-col summary-col-sentflood">${latest.sent_flood ?? '-'}</td>
+            <td class="summary-col summary-col-recvflood">${latest.recv_flood ?? '-'}</td>
+            <td class="summary-col summary-col-recvdirect">${latest.recv_direct ?? '-'}</td>
+            <td class="summary-col summary-col-fullevts">${latest.full_evts ?? '-'}</td>
+            <td class="summary-col summary-col-directdups">${latest.direct_dups ?? '-'}</td>
+            <td class="summary-col summary-col-flooddups">${latest.flood_dups ?? '-'}</td>
+            <td class="summary-col summary-col-rxair">${latest.rx_airtime ?? '-'}</td>
         `;
         return tr;
     }
@@ -456,7 +529,7 @@ class RepeaterHealthUI {
         const summaryBody = document.getElementById('summary-table-body');
         summaryBody.innerHTML = '';
         if (this.targets.length === 0) {
-            summaryBody.innerHTML = '<tr><td colspan="10" class="text-center text-muted">No targets yet.</td></tr>';
+            summaryBody.innerHTML = '<tr><td colspan="20" class="text-center text-muted">No targets yet.</td></tr>';
             return;
         }
         this.targets.forEach(target => {
@@ -585,6 +658,30 @@ class RepeaterHealthUI {
         }
     }
 
+    async setPassword(target) {
+        const label = target.name || target.public_key;
+        const value = prompt(`Set password for ${label}. Leave blank to clear:`, '');
+        if (value === null) return;
+        try {
+            const response = await fetch('/api/repeater-health/credentials', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    public_key: target.public_key,
+                    password: value.trim() === '' ? null : value
+                })
+            });
+            const data = await response.json();
+            if (data.error) {
+                this.setTargetsStatus(data.error, true);
+                return;
+            }
+            this.setTargetsStatus('Password updated.', false);
+        } catch (error) {
+            this.setTargetsStatus('Failed to update password.', true);
+        }
+    }
+
     async loadTrend() {
         const targetId = document.getElementById('trend-target-select').value;
         if (!targetId) {
@@ -658,6 +755,21 @@ class RepeaterHealthUI {
         }
     }
 
+    async restartViewer() {
+        const status = document.getElementById('preferences-status');
+        status.textContent = 'Restarting viewer...';
+        status.classList.remove('text-danger');
+        try {
+            await fetch('/api/web-viewer/restart', { method: 'POST' });
+            status.textContent = 'Viewer restart queued.';
+            status.classList.add('text-success');
+            setTimeout(() => { status.textContent = ''; status.classList.remove('text-success'); }, 4000);
+        } catch (error) {
+            status.textContent = 'Viewer restart failed.';
+            status.classList.add('text-danger');
+        }
+    }
+
     setTargetsStatus(message, isError) {
         const status = document.getElementById('targets-status');
         if (!status) return;
@@ -715,13 +827,16 @@ class RepeaterHealthUI {
             const rowsToShow = samples.slice(0, historyRows);
             if (rowsToShow.length === 0) {
                 this.insertHistoryRow(anchorRow, null);
+                this.updateSummaryColumns(false);
                 return;
             }
             rowsToShow.forEach(sample => {
                 this.insertHistoryRow(anchorRow, sample);
             });
+            this.updateSummaryColumns(false);
         } catch (error) {
             this.insertHistoryRow(anchorRow, null);
+            this.updateSummaryColumns(false);
         }
     }
 
@@ -731,7 +846,7 @@ class RepeaterHealthUI {
         const time = sample && sample.timestamp ? moment.unix(sample.timestamp).format('MM/DD/YYYY, h:mm:ss A') : '-';
         const uptime = sample && sample.uptime ? this.formatUptime(sample.uptime) : '-';
         row.innerHTML = `
-            <td><span class="text-muted ps-4">History</span></td>
+            <td class="summary-col summary-col-name"><span class="text-muted ps-4">History</span></td>
             <td class="summary-col summary-col-latest">${time}</td>
             <td class="summary-col summary-col-battery">${sample?.battery_v ?? '-'}</td>
             <td class="summary-col summary-col-rssi">${sample?.last_rssi ?? '-'}</td>
@@ -739,8 +854,17 @@ class RepeaterHealthUI {
             <td class="summary-col summary-col-noise">${sample?.noise_floor ?? '-'}</td>
             <td class="summary-col summary-col-direct">${sample?.sent_direct ?? '-'}</td>
             <td class="summary-col summary-col-uptime">${uptime}</td>
-            <td class="summary-col summary-col-firmware">${sample?.fw_version ?? '-'}</td>
-            <td class="summary-col summary-col-build">${sample?.fw_build ?? '-'}</td>
+            <td class="summary-col summary-col-txqueue">${sample?.tx_queue_len ?? '-'}</td>
+            <td class="summary-col summary-col-recv">${sample?.nb_recv ?? '-'}</td>
+            <td class="summary-col summary-col-sent">${sample?.nb_sent ?? '-'}</td>
+            <td class="summary-col summary-col-airtime">${sample?.airtime ?? '-'}</td>
+            <td class="summary-col summary-col-sentflood">${sample?.sent_flood ?? '-'}</td>
+            <td class="summary-col summary-col-recvflood">${sample?.recv_flood ?? '-'}</td>
+            <td class="summary-col summary-col-recvdirect">${sample?.recv_direct ?? '-'}</td>
+            <td class="summary-col summary-col-fullevts">${sample?.full_evts ?? '-'}</td>
+            <td class="summary-col summary-col-directdups">${sample?.direct_dups ?? '-'}</td>
+            <td class="summary-col summary-col-flooddups">${sample?.flood_dups ?? '-'}</td>
+            <td class="summary-col summary-col-rxair">${sample?.rx_airtime ?? '-'}</td>
         `;
         anchorRow.parentNode.insertBefore(row, anchorRow.nextElementSibling);
     }
@@ -847,10 +971,28 @@ class RepeaterHealthUI {
                     return latest.sent_direct ?? -Infinity;
                 case 'uptime':
                     return latest.uptime ?? -Infinity;
-                case 'firmware':
-                    return (latest.fw_version || '').toLowerCase();
-                case 'build':
-                    return (latest.fw_build || '').toLowerCase();
+                case 'txqueue':
+                    return latest.tx_queue_len ?? -Infinity;
+                case 'recv':
+                    return latest.nb_recv ?? -Infinity;
+                case 'sent':
+                    return latest.nb_sent ?? -Infinity;
+                case 'airtime':
+                    return latest.airtime ?? -Infinity;
+                case 'sentflood':
+                    return latest.sent_flood ?? -Infinity;
+                case 'recvflood':
+                    return latest.recv_flood ?? -Infinity;
+                case 'recvdirect':
+                    return latest.recv_direct ?? -Infinity;
+                case 'fullevts':
+                    return latest.full_evts ?? -Infinity;
+                case 'directdups':
+                    return latest.direct_dups ?? -Infinity;
+                case 'flooddups':
+                    return latest.flood_dups ?? -Infinity;
+                case 'rxair':
+                    return latest.rx_airtime ?? -Infinity;
                 default:
                     return 0;
             }
@@ -881,6 +1023,7 @@ class RepeaterHealthUI {
             }
         });
     }
+
 }
 
 document.addEventListener('DOMContentLoaded', () => new RepeaterHealthUI());
