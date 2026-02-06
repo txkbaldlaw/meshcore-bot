@@ -129,6 +129,7 @@ class RepeaterHealthManager:
                     auto_refresh_enabled INTEGER DEFAULT 0,
                     auto_refresh_interval_minutes INTEGER DEFAULT 30,
                     last_auto_refresh_at REAL,
+                    history_rows INTEGER DEFAULT 5,
                     updated_at REAL
                 )
             ''')
@@ -136,11 +137,13 @@ class RepeaterHealthManager:
             columns = [row[1] for row in cursor.fetchall()]
             if 'last_auto_refresh_at' not in columns:
                 cursor.execute('ALTER TABLE repeater_health_preferences ADD COLUMN last_auto_refresh_at REAL')
+            if 'history_rows' not in columns:
+                cursor.execute('ALTER TABLE repeater_health_preferences ADD COLUMN history_rows INTEGER DEFAULT 5')
             cursor.execute('SELECT id FROM repeater_health_preferences WHERE id = 1')
             if cursor.fetchone() is None:
                 cursor.execute('''
-                    INSERT INTO repeater_health_preferences (id, auto_refresh_enabled, auto_refresh_interval_minutes, last_auto_refresh_at, updated_at)
-                    VALUES (1, 0, 30, NULL, ?)
+                    INSERT INTO repeater_health_preferences (id, auto_refresh_enabled, auto_refresh_interval_minutes, last_auto_refresh_at, history_rows, updated_at)
+                    VALUES (1, 0, 30, NULL, 5, ?)
                 ''', (time.time(),))
             conn.commit()
 
@@ -151,23 +154,25 @@ class RepeaterHealthManager:
             cursor.execute('SELECT * FROM repeater_health_preferences WHERE id = 1')
             row = cursor.fetchone()
         if not row:
-            return {'auto_refresh_enabled': False, 'auto_refresh_interval_minutes': 30}
+            return {'auto_refresh_enabled': False, 'auto_refresh_interval_minutes': 30, 'history_rows': 5}
         return {
             'auto_refresh_enabled': bool(row['auto_refresh_enabled']),
             'auto_refresh_interval_minutes': row['auto_refresh_interval_minutes'],
             'last_auto_refresh_at': row['last_auto_refresh_at'],
+            'history_rows': row['history_rows'] if row['history_rows'] is not None else 5,
             'updated_at': row['updated_at']
         }
 
-    def update_preferences(self, enabled: bool, interval_minutes: int) -> Dict[str, Any]:
+    def update_preferences(self, enabled: bool, interval_minutes: int, history_rows: int = 5) -> Dict[str, Any]:
         interval_minutes = max(1, min(1440, int(interval_minutes)))
+        history_rows = max(1, min(50, int(history_rows)))
         with self._db_lock, sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 UPDATE repeater_health_preferences
-                SET auto_refresh_enabled = ?, auto_refresh_interval_minutes = ?, updated_at = ?
+                SET auto_refresh_enabled = ?, auto_refresh_interval_minutes = ?, history_rows = ?, updated_at = ?
                 WHERE id = 1
-            ''', (1 if enabled else 0, interval_minutes, time.time()))
+            ''', (1 if enabled else 0, interval_minutes, history_rows, time.time()))
             conn.commit()
         return self.get_preferences()
 

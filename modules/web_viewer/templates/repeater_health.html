@@ -125,6 +125,10 @@
                             <label class="form-label">Interval (minutes)</label>
                             <input type="number" min="1" max="1440" class="form-control" id="auto-refresh-interval" value="30">
                         </div>
+                        <div class="col-md-2">
+                            <label class="form-label">History rows</label>
+                            <input type="number" min="1" max="50" class="form-control" id="history-rows" value="5">
+                        </div>
                         <div class="col-md-2 d-grid">
                             <button class="btn btn-outline-primary" id="save-preferences-btn" type="button">Save</button>
                         </div>
@@ -312,6 +316,13 @@ class RepeaterHealthUI {
                 this.updateSummarySortIcons();
             });
         });
+        document.getElementById('summary-table-body').addEventListener('click', (event) => {
+            const button = event.target.closest('.summary-expand');
+            if (!button) return;
+            event.preventDefault();
+            event.stopPropagation();
+            this.toggleHistoryRows(button);
+        });
     }
 
     async loadContacts() {
@@ -378,6 +389,7 @@ class RepeaterHealthUI {
             const prefs = data.preferences || {};
             document.getElementById('auto-refresh-toggle').checked = !!prefs.auto_refresh_enabled;
             document.getElementById('auto-refresh-interval').value = prefs.auto_refresh_interval_minutes || 30;
+            document.getElementById('history-rows').value = prefs.history_rows || 5;
             const lastLabel = document.getElementById('last-auto-refresh');
             if (prefs.last_auto_refresh_at) {
                 lastLabel.textContent = `Last refresh: ${moment.unix(prefs.last_auto_refresh_at).format('MM/DD/YYYY, h:mm:ss A')}`;
@@ -419,8 +431,14 @@ class RepeaterHealthUI {
         const latest = target.latest_sample || {};
         const sampleTime = latest.timestamp ? moment.unix(latest.timestamp).format('MM/DD/YYYY, h:mm:ss A') : '-';
         const uptimeDisplay = latest.uptime ? this.formatUptime(latest.uptime) : '-';
+        tr.dataset.targetId = target.id;
         tr.innerHTML = `
-            <td>${target.name || 'Unknown'}</td>
+            <td>
+                <button class="btn btn-sm btn-link text-decoration-none summary-expand" data-target-id="${target.id}">
+                    <i class="fas fa-caret-right"></i>
+                </button>
+                <span>${target.name || 'Unknown'}</span>
+            </td>
             <td class="summary-col summary-col-latest">${sampleTime}</td>
             <td class="summary-col summary-col-battery">${latest.battery_v ?? '-'}</td>
             <td class="summary-col summary-col-rssi">${latest.last_rssi ?? '-'}</td>
@@ -595,6 +613,7 @@ class RepeaterHealthUI {
     async savePreferences() {
         const enabled = document.getElementById('auto-refresh-toggle').checked;
         const interval = parseInt(document.getElementById('auto-refresh-interval').value || '30', 10);
+        const historyRows = parseInt(document.getElementById('history-rows').value || '5', 10);
         const status = document.getElementById('preferences-status');
         status.textContent = 'Saving...';
         try {
@@ -603,7 +622,8 @@ class RepeaterHealthUI {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     auto_refresh_enabled: enabled,
-                    auto_refresh_interval_minutes: interval
+                    auto_refresh_interval_minutes: interval,
+                    history_rows: historyRows
                 })
             });
             const data = await response.json();
@@ -652,6 +672,82 @@ class RepeaterHealthUI {
                 }
             }, 4000);
         }
+    }
+
+    async toggleHistoryRows(button) {
+        const targetId = button.getAttribute('data-target-id');
+        if (!targetId) return;
+        const row = button.closest('tr');
+        if (!row) return;
+        const icon = button.querySelector('i');
+        const expanded = row.classList.contains('history-expanded');
+        if (expanded) {
+            row.classList.remove('history-expanded');
+            row.classList.remove('table-active');
+            if (icon) icon.className = 'fas fa-caret-right';
+            this.removeHistoryRows(row);
+            return;
+        }
+
+        row.classList.add('history-expanded');
+        row.classList.add('table-active');
+        if (icon) icon.className = 'fas fa-caret-down';
+        await this.loadHistoryRows(row, targetId);
+    }
+
+    removeHistoryRows(anchorRow) {
+        let next = anchorRow.nextElementSibling;
+        while (next && next.classList.contains('history-row')) {
+            const toRemove = next;
+            next = next.nextElementSibling;
+            toRemove.remove();
+        }
+    }
+
+    async loadHistoryRows(anchorRow, targetId) {
+        const latestTimestamp = this.getTargetTimestamp(targetId);
+        const historyRows = parseInt(document.getElementById('history-rows').value || '5', 10);
+        const limit = Math.max(1, historyRows + 1);
+        try {
+            const response = await fetch(`/api/repeater-health/samples?target_id=${targetId}&limit=${limit}`);
+            const data = await response.json();
+            const samples = (data.samples || []).filter(s => s.timestamp && s.timestamp !== latestTimestamp);
+            const rowsToShow = samples.slice(0, historyRows);
+            if (rowsToShow.length === 0) {
+                this.insertHistoryRow(anchorRow, null);
+                return;
+            }
+            rowsToShow.forEach(sample => {
+                this.insertHistoryRow(anchorRow, sample);
+            });
+        } catch (error) {
+            this.insertHistoryRow(anchorRow, null);
+        }
+    }
+
+    insertHistoryRow(anchorRow, sample) {
+        const row = document.createElement('tr');
+        row.className = 'history-row';
+        const time = sample && sample.timestamp ? moment.unix(sample.timestamp).format('MM/DD/YYYY, h:mm:ss A') : '-';
+        const uptime = sample && sample.uptime ? this.formatUptime(sample.uptime) : '-';
+        row.innerHTML = `
+            <td><span class="text-muted ps-4">History</span></td>
+            <td class="summary-col summary-col-latest">${time}</td>
+            <td class="summary-col summary-col-battery">${sample?.battery_v ?? '-'}</td>
+            <td class="summary-col summary-col-rssi">${sample?.last_rssi ?? '-'}</td>
+            <td class="summary-col summary-col-snr">${sample?.last_snr ?? '-'}</td>
+            <td class="summary-col summary-col-noise">${sample?.noise_floor ?? '-'}</td>
+            <td class="summary-col summary-col-direct">${sample?.sent_direct ?? '-'}</td>
+            <td class="summary-col summary-col-uptime">${uptime}</td>
+            <td class="summary-col summary-col-firmware">${sample?.fw_version ?? '-'}</td>
+            <td class="summary-col summary-col-build">${sample?.fw_build ?? '-'}</td>
+        `;
+        anchorRow.parentNode.insertBefore(row, anchorRow.nextElementSibling);
+    }
+
+    getTargetTimestamp(targetId) {
+        const target = this.targets.find(t => String(t.id) === String(targetId));
+        return target && target.latest_sample ? target.latest_sample.timestamp : 0;
     }
 
     renderChart(points, metric) {
