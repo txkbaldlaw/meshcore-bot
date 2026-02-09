@@ -731,7 +731,12 @@ class MessageScheduler:
                         except Exception as e:
                             self.logger.warning(f"Repeater login failed: {e}")
 
-                    status = await self.bot.meshcore.commands.req_status_sync(contact, timeout=0)
+                    # Allow time for repeaters to respond; 0 can return before a response arrives.
+                    timeout_seconds = max(
+                        5,
+                        self.bot.config.getint('Repeater_Health', 'meshcli_timeout', fallback=25)
+                    )
+                    status = await self.bot.meshcore.commands.req_status_sync(contact, timeout=timeout_seconds)
                     if not status:
                         raise ValueError('Getting data')
 
