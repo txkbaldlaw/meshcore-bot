@@ -546,17 +546,46 @@ class BotDataViewer:
 
         @self.app.route('/api/repeater-health/trends')
         def api_repeater_health_trends():
-            """Get health trend data for a target"""
+            """Get health trend data for one or more targets"""
             if not self.repeater_health_enabled:
                 return _repeater_health_disabled()
             if not self.repeater_health_manager:
                 return jsonify({'error': 'Repeater health manager not available'}), 500
             try:
-                target_id = int(request.args.get('target_id', '0'))
+                target_ids_param = request.args.get('target_ids', '')
                 metric = request.args.get('metric', 'last_rssi')
                 days = int(request.args.get('days', '7'))
-                data = self.repeater_health_manager.get_trends(target_id, metric, days)
-                return jsonify({'data': data})
+
+                if not target_ids_param:
+                    return jsonify({'series': [], 'metric': metric, 'days': days})
+
+                target_ids = []
+                for raw_id in target_ids_param.split(','):
+                    raw_id = raw_id.strip()
+                    if not raw_id:
+                        continue
+                    try:
+                        target_ids.append(int(raw_id))
+                    except ValueError:
+                        continue
+
+                if not target_ids:
+                    return jsonify({'series': [], 'metric': metric, 'days': days})
+
+                targets_by_id = {t['id']: t for t in self.repeater_health_manager.list_targets()}
+                series = []
+                for target_id in target_ids:
+                    target = targets_by_id.get(target_id)
+                    if not target:
+                        continue
+                    data = self.repeater_health_manager.get_trends(target_id, metric, days)
+                    series.append({
+                        'target_id': target_id,
+                        'name': target.get('name') or f"Target {target_id}",
+                        'data': data
+                    })
+
+                return jsonify({'series': series, 'metric': metric, 'days': days})
             except Exception as e:
                 self.logger.error(f"Error getting repeater health trends: {e}")
                 return jsonify({'error': str(e)}), 500

@@ -68,8 +68,16 @@
             <div class="card-body">
                 <div class="row g-2 align-items-end mb-3">
                     <div class="col-md-4">
-                        <label class="form-label">Target</label>
-                        <select class="form-select" id="trend-target-select"></select>
+                        <label class="form-label">Targets</label>
+                        <div class="dropdown" id="trend-target-dropdown">
+                            <button class="btn btn-outline-secondary dropdown-toggle w-100 text-start" type="button" id="trend-target-btn" data-bs-toggle="dropdown" aria-expanded="false">
+                                Select targets
+                            </button>
+                            <div class="dropdown-menu w-100 p-2" id="trend-target-menu">
+                                <div class="text-muted small">Loading targets...</div>
+                            </div>
+                        </div>
+                        <div class="form-text">Select one or more repeaters.</div>
                     </div>
                     <div class="col-md-4">
                         <label class="form-label">Metric</label>
@@ -290,6 +298,7 @@ class RepeaterHealthUI {
         this.targets = [];
         this.contacts = [];
         this.chart = null;
+        this.selectedTargetIds = new Set();
         this.summarySort = { column: 'latest', direction: 'desc' };
         this.summaryColumnDefaults = {
             latest: true,
@@ -337,7 +346,6 @@ class RepeaterHealthUI {
             e.stopPropagation();
             this.loadTrend();
         });
-        document.getElementById('trend-target-select').addEventListener('change', () => this.loadTrend());
         document.getElementById('trend-metric-select').addEventListener('change', () => this.loadTrend());
         document.getElementById('trend-days-input').addEventListener('change', () => this.loadTrend());
         document.getElementById('save-preferences-btn').addEventListener('click', (e) => {
@@ -539,18 +547,49 @@ class RepeaterHealthUI {
     }
 
     populateTrendTargets() {
-        const select = document.getElementById('trend-target-select');
-        const current = select.value;
-        select.innerHTML = '<option value="">Select a target</option>';
-        this.targets.forEach(target => {
-            const option = document.createElement('option');
-            option.value = target.id;
-            option.textContent = target.name || target.public_key;
-            select.appendChild(option);
-        });
-        if (current) {
-            select.value = current;
+        const menu = document.getElementById('trend-target-menu');
+        if (!menu) return;
+
+        const validIds = new Set(this.targets.map(target => String(target.id)));
+        this.selectedTargetIds = new Set([...this.selectedTargetIds].filter(id => validIds.has(String(id))));
+
+        menu.innerHTML = '';
+        if (this.targets.length === 0) {
+            menu.innerHTML = '<div class="text-muted small">No targets available.</div>';
+            this.updateTrendTargetButtonLabel();
+            return;
         }
+
+        this.targets.forEach(target => {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'form-check';
+            const checkbox = document.createElement('input');
+            checkbox.className = 'form-check-input';
+            checkbox.type = 'checkbox';
+            checkbox.id = `trend-target-${target.id}`;
+            checkbox.value = target.id;
+            checkbox.checked = this.selectedTargetIds.has(String(target.id));
+            checkbox.addEventListener('change', () => {
+                if (checkbox.checked) {
+                    this.selectedTargetIds.add(String(target.id));
+                } else {
+                    this.selectedTargetIds.delete(String(target.id));
+                }
+                this.updateTrendTargetButtonLabel();
+                this.loadTrend();
+            });
+
+            const label = document.createElement('label');
+            label.className = 'form-check-label';
+            label.htmlFor = checkbox.id;
+            label.textContent = target.name || target.public_key;
+
+            wrapper.appendChild(checkbox);
+            wrapper.appendChild(label);
+            menu.appendChild(wrapper);
+        });
+
+        this.updateTrendTargetButtonLabel();
     }
 
     async addByPublicKey() {
@@ -683,25 +722,25 @@ class RepeaterHealthUI {
     }
 
     async loadTrend() {
-        const targetId = document.getElementById('trend-target-select').value;
-        if (!targetId) {
-            this.renderChart([], '');
+        const targetIds = Array.from(this.selectedTargetIds);
+        if (!targetIds.length) {
+            this.renderChart([], '', { emptyMessage: 'Select one or more targets.' });
             return;
         }
         const metric = document.getElementById('trend-metric-select').value;
         if (!metric) {
-            this.renderChart([], '');
+            this.renderChart([], '', { emptyMessage: 'Select a metric.' });
             return;
         }
         const days = document.getElementById('trend-days-input').value;
         try {
-            const response = await fetch(`/api/repeater-health/trends?target_id=${targetId}&metric=${metric}&days=${days}`);
+            const response = await fetch(`/api/repeater-health/trends?target_ids=${encodeURIComponent(targetIds.join(','))}&metric=${metric}&days=${days}`);
             const data = await response.json();
             if (data.error) {
                 console.error(data.error);
                 return;
             }
-            this.renderChart(data.data || [], metric);
+            this.renderChart(data.series || [], metric);
         } catch (error) {
             console.error('Failed to load trend', error);
         }
@@ -874,10 +913,29 @@ class RepeaterHealthUI {
         return target && target.latest_sample ? target.latest_sample.timestamp : 0;
     }
 
-    renderChart(points, metric) {
-        const labels = points.map(p => moment.unix(p.timestamp).format('MM/DD HH:mm'));
-        const values = points.map(p => p.value);
+    renderChart(series, metric, options = {}) {
         const ctx = document.getElementById('healthTrendChart').getContext('2d');
+        const palette = [
+            '#1c6cff', '#ff7a59', '#19b394', '#a855f7', '#f59e0b',
+            '#ef4444', '#06b6d4', '#10b981', '#e11d48', '#6366f1',
+            '#84cc16', '#14b8a6'
+        ];
+        const datasets = (series || []).map((entry, index) => {
+            const color = palette[index % palette.length];
+            return {
+                label: entry.name || `Target ${entry.target_id}`,
+                data: (entry.data || []).map(point => ({
+                    x: point.timestamp ? point.timestamp * 1000 : null,
+                    y: point.value ?? null
+                })),
+                borderColor: color,
+                backgroundColor: `${color}33`,
+                fill: false,
+                tension: 0.2,
+                pointRadius: 2,
+                spanGaps: false
+            };
+        });
 
         if (this.chart) {
             this.chart.destroy();
@@ -885,27 +943,45 @@ class RepeaterHealthUI {
 
         this.chart = new Chart(ctx, {
             type: 'line',
-            data: {
-                labels,
-                datasets: [{
-                    label: metric ? metric.replace('_', ' ').toUpperCase() : 'Select a metric',
-                    data: values,
-                    borderColor: '#1c6cff',
-                    backgroundColor: 'rgba(28, 108, 255, 0.18)',
-                    fill: true,
-                    tension: 0.3,
-                    pointRadius: 2
-                }]
-            },
+            data: { datasets },
             options: {
                 responsive: true,
-                plugins: { legend: { display: true } },
+                parsing: false,
+                plugins: {
+                    legend: { display: true },
+                    title: {
+                        display: !datasets.length,
+                        text: options.emptyMessage || 'Select a metric and targets.'
+                    }
+                },
                 scales: {
-                    x: { ticks: { autoSkip: true, maxTicksLimit: 8 } },
+                    x: {
+                        type: 'linear',
+                        ticks: {
+                            autoSkip: true,
+                            maxTicksLimit: 8,
+                            callback: (value) => moment(value).format('MM/DD HH:mm')
+                        }
+                    },
                     y: { beginAtZero: false }
                 }
             }
         });
+    }
+
+    updateTrendTargetButtonLabel() {
+        const button = document.getElementById('trend-target-btn');
+        if (!button) return;
+        const count = this.selectedTargetIds.size;
+        if (count === 0) {
+            button.textContent = 'Select targets';
+        } else if (count === 1) {
+            const id = Array.from(this.selectedTargetIds)[0];
+            const target = this.targets.find(t => String(t.id) === String(id));
+            button.textContent = target ? target.name || target.public_key : '1 target selected';
+        } else {
+            button.textContent = `${count} targets selected`;
+        }
     }
 
 
